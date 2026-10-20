@@ -3,8 +3,9 @@ Requires Python Playwright and Chromium (or Playwright's installed Chromium).
 Optional: FOOTBALL_BASE_URL and CHROMIUM_PATH environment variables.
 """
 import asyncio,json,os,shutil
+import argparse
 from playwright.async_api import async_playwright
-async def main():
+async def main(first_half=False):
  async with async_playwright() as p:
   b=await p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or shutil.which('chromium'),headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
   page=await b.new_page(viewport={'width':1200,'height':800});errors=[]
@@ -64,6 +65,15 @@ async def main():
   # Opponents are placed far away for the clock/result test, not for gameplay.
   await page.evaluate("window.__footballDebug.scenario({ball:[-.12,.11,0],owner:5,players:Array.from({length:6},(_,i)=>({index:i+8,x:5000,z:0}))});window.__footballDebug.step(156)")
   await page.get_by_role('button',name='SECOND HALF').wait_for(timeout=10000)
+  if first_half:
+   await page.get_by_role('heading',name='HALF TIME',exact=True).wait_for()
+   state=await page.evaluate('window.__footballDebug.snapshot()')
+   assert state['periodEnded'] and state['paused']
+   assert await page.evaluate("localStorage.getItem('legon-football-team-progress-v1')") is None
+   assert not errors,errors
+   print('FIRST HALF: halftime reached; match stays paused; no premature win saved; ERRORS []',flush=True)
+   await b.close()
+   return
   await page.get_by_role('button',name='SECOND HALF').click()
   await page.keyboard.press('Escape')
   # The second half restarts from a kickoff; clear the opponents away again.
@@ -77,4 +87,7 @@ async def main():
   print('ERRORS',errors,flush=True)
   assert not errors,errors
   await b.close()
-asyncio.run(main())
+if __name__ == '__main__':
+ parser=argparse.ArgumentParser(description=__doc__)
+ parser.add_argument('--first-half',action='store_true',help='stop at halftime without starting the second half')
+ asyncio.run(main(parser.parse_args().first_half))

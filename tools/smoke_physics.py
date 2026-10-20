@@ -33,6 +33,11 @@ async def development_checks(page):
         if (v[0]*direction.x+v[2]*direction.z < 20) throw Error('Shot ignored manual aim: '+v);
       }
       d.aim(null);
+      d.scenario({ball:[.68,.11,0],owner:5,players:[...players,{index:5,x:0,z:0}]});
+      d.press('k'); d.step(.3); d.release('k');
+      window.dispatchEvent(new Event('blur')); d.step(.4);
+      if (d.snapshot().possessor!==5 || Math.abs(d.snapshot().velocity[0])>.1)
+        throw Error('A queued shot fired after focus was lost');
       // Opponents block the straight lane; a nearby diagonal receiver is free.
       d.scenario({ball:[.68,.11,0],owner:5,players:[...players,
         {index:5,x:0,z:0},{index:6,x:15,z:0},{index:4,x:15,z:5},{index:10,x:7,z:0}]});
@@ -61,6 +66,9 @@ async def production_checks(page, base):
     assert response.ok
     version = await response.json()
     assert version['commit'] and version['builtAt'] and version['id']
+    expected = os.environ.get('FOOTBALL_EXPECT_BUILD_ID')
+    if expected:
+        assert version['id'] == expected, 'the server is serving a different build'
     # Keyboard movement must change the rendered player's radar position.
     await page.keyboard.down('ArrowRight')
     try:

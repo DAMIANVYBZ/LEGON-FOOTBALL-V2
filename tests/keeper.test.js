@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import { createRandom, keeperPosition, keeperReach, saveOutcome, shotOnGoal } from '../src/keeper.js';
 import { bestPassOption, decideCarrier, markingAssignments } from '../src/cpuBrain.js';
 
+test('keepers cannot save balls above their vertical reach', () => {
+  for (const diving of [false, true]) {
+    assert.equal(saveOutcome({ gap: 0, height: 5, speed: 25, diving, random: () => 0.5 }), 'miss');
+    assert.equal(saveOutcome({ gap: 0, height: 2.66, speed: 25, diving, random: () => 0.5 }), 'miss');
+    assert.notEqual(saveOutcome({ gap: 0, height: 2.3, speed: 28, diving, random: () => 0.5 }), 'miss');
+  }
+});
+
 test('the keeper narrows the angle and rushes out one-on-one', () => {
   const central = keeperPosition({ x: -20, z: 0 }, -35, 7.32);
   assert.ok(central.x > -35 && central.x < -32 && Math.abs(central.z) < 0.01);

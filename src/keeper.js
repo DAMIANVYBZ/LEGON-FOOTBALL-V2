@@ -52,6 +52,9 @@ export function keeperReach(height, diving) {
 // 'punch' or 'miss'. Shots struck near the keeper are always stopped; stretching
 // saves succeed less often the further and faster the ball is.
 export function saveOutcome({ gap, height, speed, diving, ability = 1, random = Math.random }) {
+  // A ball above the keeper's hands must pass overhead, even when its path
+  // lines up perfectly with his body on the ground.
+  if (height > 2.65 * ability) return 'miss';
   const reach = keeperReach(height, diving) * ability;
   if (gap > reach) return 'miss';
   const stretch = gap / reach;

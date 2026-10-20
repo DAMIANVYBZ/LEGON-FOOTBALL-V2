@@ -52,8 +52,9 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
   // Rapier limits a body to about 47 rad/s at this timestep, but a ball rolling
   // at 12 m/s spins at 109 rad/s. Spin, rolling and grip are therefore modelled
   // here and Rapier only resolves contacts, with friction disabled.
-  world.createCollider(RAPIER.ColliderDesc.ball(ballRadius).setMass(BALL.mass)
+  const ballCollider = world.createCollider(RAPIER.ColliderDesc.ball(ballRadius).setMass(BALL.mass)
     .setFriction(0).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+    .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
     .setRestitution(BALL.restitution), body);
   const players = playerPositions.map(position => {
     const player = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()
@@ -62,6 +63,8 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
       .setFriction(0.7).setRestitution(0.08), player);
     return { body: player, collider };
   });
+  const contactEvents = new RAPIER.EventQueue(true);
+  const playerByCollider = new Map(players.map((player, index) => [player.collider.handle, index]));
 
   const scatter = random(Math.round(length * 1000 + width));
 
@@ -150,16 +153,24 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
         if (position) player.setNextKinematicTranslation({ x: position.x, y: 0.85, z: position.z });
       });
       accumulator = Math.min(0.1, accumulator + dt);
+      let lastTouch = -1;
       while (accumulator >= world.timestep - 1e-9) {
         applyForces(world.timestep);
         const before = body.linvel().y;
-        world.step();
+        world.step(contactEvents);
+        contactEvents.drainCollisionEvents((first, second, started) => {
+          if (!started) return;
+          const other = first === ballCollider.handle ? second : second === ballCollider.handle ? first : null;
+          const index = playerByCollider.get(other);
+          // Carrying uses a sensor: proximity to the owner is not a deflection.
+          if (index !== undefined && !players[index].collider.isSensor()) lastTouch = index;
+        });
         landing(before);
         integrateRotation(world.timestep);
         accumulator -= world.timestep;
       }
-      return { position: body.translation(), velocity: body.linvel(), rotation: { ...rotation }, spin: { ...spin } };
+      return { position: body.translation(), velocity: body.linvel(), rotation: { ...rotation }, spin: { ...spin }, lastTouch };
     },
-    free() { world.free(); },
+    free() { contactEvents.free(); world.free(); },
   };
 }

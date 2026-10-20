@@ -73,12 +73,15 @@ test('a fast ball hits a player instead of passing through their legs', async ()
     goalHeight: 2.44, ballRadius: 0.11, playerPositions: [{ x: 2, z: 0 }] });
   const position = { x: 0, y: 0.11, z: 0 }, velocity = { x: 12, y: 0, z: 0 };
   simulation.reset(position, velocity);
+  const touches = [];
   for (let i = 0; i < 25; i++) {
     const next = simulation.step(1 / 60, position, velocity, [{ x: 2, z: 0 }]);
+    if (next.lastTouch >= 0) touches.push(next.lastTouch);
     Object.assign(position, next.position); Object.assign(velocity, next.velocity);
   }
   assert.ok(position.x < 1.8);
   assert.ok(velocity.x < 0);
+  assert.ok(touches.includes(0), 'the deflecting player is reported for corners and throw-ins');
   simulation.free();
 });
 
@@ -91,6 +94,7 @@ test('dribbling stays ahead through a full turn and does not hit the owner colli
     const angle = i / 180 * Math.PI * 2;
     advancePlayer(motion, { x: Math.cos(angle), z: Math.sin(angle) }, 1 / 60, { dribbling: true });
     const step = physics.step(1 / 60, ball, { x: motion.vx, y: 0, z: motion.vz }, [motion], 0);
+    assert.equal(step.lastTouch, -1, 'the carrier sensor is not a fresh deflection');
     ball = carryBall(step.position, motion, 1 / 60);
     const f = forwardFromHeading(motion.heading);
     assert.ok((ball.x - motion.x) * f.x + (ball.z - motion.z) * f.z >= 0.499);

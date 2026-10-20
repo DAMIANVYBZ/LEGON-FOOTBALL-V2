@@ -127,12 +127,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     host.appendChild(renderer.domElement);
     const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
     const cameraFocus = new THREE.Vector3();
+    let phoneLookZ = WIDTH * 0.25;
     const clock = new THREE.Clock();
     scene.add(new THREE.HemisphereLight(0xf8fcff, 0x466235, 2.2));
     const sun = new THREE.DirectionalLight(0xffe7ba, 2.6);
     sun.position.set(-50, 95, 48);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    const shadowSize = config.device === 'phone' ? 1024 : 2048;
+    sun.shadow.mapSize.set(shadowSize, shadowSize);
     // Fit the shadow map to the pitch so its detail is not spent on the stands.
     sun.shadow.camera.left = -LENGTH / 2 - 8; sun.shadow.camera.right = LENGTH / 2 + 8;
     sun.shadow.camera.top = WIDTH / 2 + 8; sun.shadow.camera.bottom = -WIDTH / 2 - 8;
@@ -295,7 +297,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       .then(simulation => { if (disposed) simulation.free(); else { physics = simulation; physics.reset(ball.position, ballVelocity); ready.physics = true; updateLoading(); } })
       .catch(error => { console.error('Match physics unavailable', error); ready.physics = true; updateLoading(); });
     let elapsed = 0, lastHUD = 0, goalCooldown = 0, messageUntil = 2, resetAt = 0, controlLockUntil = 0;
-    let kickoffGraceUntil = difficulty.kickoffGrace, cutCamera = true;
+    let kickoffGraceUntil = difficulty.kickoffGrace, cutCamera = true, renderPending = true;
     let kickoffWaiting = true; // everyone holds position until the kickoff is taken
     let shootHold = false, power = 0, pausedLocal = false, periodEnded = false, lastTouchHome = true, touchSprint = false, shieldHold = false;
     let finesseHold = false, teammateContain = false, jockeyHold = false, keeperRushHold = false, runUntil = 0;
@@ -356,7 +358,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const keyboard = preferences.keyboard;
     const state = {
       setPeriodEnded(value) { periodEnded = value; },
-      setPause(value) { if (periodEnded && !value) return; pausedLocal = value; setPaused(value); },
+      setPause(value) { if (periodEnded && !value) return; clearInput(); renderPending = true; pausedLocal = value; setPaused(value); },
       togglePause() { state.setPause(!pausedLocal); },
       setAxis(x, z) { touchAxis.x = x; touchAxis.z = z; },
       press(key) { pressAction(key); },
@@ -370,7 +372,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       setSound(on) { sound.setEnabled(on); },
     };
     engine.current = state;
-    const resize = () => { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h); cam.aspect = w / h; cam.fov = cam.aspect < 0.8 ? 46 : cameraMode === 'Co-op' ? 42 : 48; cam.updateProjectionMatrix(); };
+    const resize = () => { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h); cam.aspect = w / h; cam.fov = cam.aspect < 0.8 ? 46 : cameraMode === 'Co-op' ? 42 : 48; cam.zoom = config.device === 'phone' ? 1.25 : 1; cam.updateProjectionMatrix(); renderPending = true; };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     function show(text, duration = 1.1) { setMessage(text); messageUntil = elapsed + duration; }
     function action(person, name, once = false) {
@@ -877,7 +879,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         const forward = forwardFromHeading(player.motion.heading);
         player.motion.vx = forward.x * 7.5; player.motion.vz = forward.z * 7.5;
         slideUntil = elapsed + 0.75; sliding = player;
-        challenge(player, style);
+        if (challenge(player, style)) {
+          sliding = null;
+          if (!player.sentOff) player.downUntil = elapsed + 0.5;
+        }
         return;
       }
       action(player, 'pass', true); // the short swing of a foot poked at the ball
@@ -1032,7 +1037,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const key = event.key.toLowerCase(); keys.delete(key);
       const actionKey = heldKeys.get(key); heldKeys.delete(key); if (actionKey) releaseAction(actionKey);
     }
-    function blur() { keys.clear(); heldKeys.clear(); touchAxis.x = 0; touchAxis.z = 0; touchSprint = false; shieldHold = false; shootHold = false; lobHold = false; finesseHold = false; teammateContain = false; jockeyHold = false; keeperRushHold = false; }
+    function clearInput() {
+      keys.clear(); heldKeys.clear(); touchAxis.x = 0; touchAxis.z = 0; padAxis.x = 0; padAxis.z = 0;
+      touchSprint = shieldHold = shootHold = lobHold = finesseHold = teammateContain = jockeyHold = keeperRushHold = false;
+      controlledSprint = strafeHold = containHold = sprintJockey = throwHold = false;
+      pendingShot = null; power = 0; shotStyle = 'normal';
+      if (setPiece?.phase === 'charge') { setPiece.phase = 'aim'; setPiece.button = null; }
+    }
+    function blur() { clearInput(); }
     const unlockSpeech = () => commentary.unlock();
     window.addEventListener('pointerdown', unlockSpeech, { once: true }); window.addEventListener('keydown', unlockSpeech, { once: true });
     window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
@@ -1695,6 +1707,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             ball.position.set(next.position.x, next.position.y, next.position.z);
             ballVelocity.set(next.velocity.x, next.velocity.y, next.velocity.z);
             ball.quaternion.set(next.rotation.x, next.rotation.y, next.rotation.z, next.rotation.w);
+            if (next.lastTouch >= 0 && possessor < 0 && awayCarrier < 0 && keeperHolding < 0)
+              lastTouchHome = people[next.lastTouch].home;
             checkGoalContact(before);
           } else {
             ball.position.addScaledVector(ballVelocity, dt);
@@ -1777,14 +1791,26 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // loop. Vite removes this branch from the published production bundle.
     if (import.meta.env.DEV) {
       window.__footballDebug = {
+        camera: () => {
+          cam.updateMatrixWorld();
+          const project = point => point.clone().project(cam).toArray();
+          const player = people[controlled].mesh.position;
+          return { zoom: cam.zoom, fov: cam.fov, device: config.device, mode: cameraMode, renderedFrames: renderer.info.render.frame,
+            pixelRatio: renderer.getPixelRatio(), shadowSize: sun.shadow.mapSize.x, qualityTime: renderTime,
+            position: cam.position.toArray(), foot: project(player), head: project(player.clone().setY(1.8)), ball: project(ball.position) };
+        },
         goalEffects: () => Object.values(goalsBySide).map(g => ({ side: g.side, rippling: Boolean(g.ripple), shaking: Boolean(g.shake), frameOffset: g.frame.position.toArray() })),
-        snapshot: () => ({ elapsed, score: [...goals], possessor, awayCarrier, keeperHolding, passTarget, passDestination: passDestination?.toArray(), setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, started: ready.started,
+        snapshot: () => ({ elapsed, score: [...goals], paused: pausedLocal, periodEnded, sliding: Boolean(sliding),
+          input: { touchSprint, shieldHold, shootHold, lobHold, jockeyHold, containHold, controlledSprint, strafeHold, sprintJockey, teammateContain, keeperRushHold, power },
+          possessor, awayCarrier, keeperHolding, passTarget, passDestination: passDestination?.toArray(), setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, started: ready.started,
           physicsReady: Boolean(physics), clipsLoaded: Object.keys(clips).length, events: { ...events },
           ball: ball.position.toArray(), velocity: ballVelocity.toArray(), spin: physics?.spin(),
           players: people.map(p => ({ x: p.motion.x, z: p.motion.z, heading: p.motion.heading, home: p.home,
-            keeper: p.keeper, action: p.actionName, yaw: p.mesh.rotation.y, actionUntil: p.actionUntil })) }),
-        step: (seconds) => { const wasPaused = pausedLocal; pausedLocal = false; for (let i = 0; i < Math.round(seconds * 60); i++) simulate(1 / 60); pausedLocal = wasPaused; },
+            keeper: p.keeper, action: p.actionName, yaw: p.mesh.rotation.y, actionUntil: p.actionUntil,
+            vx: p.motion.vx, vz: p.motion.vz, stamina: p.stamina, downUntil: p.downUntil || 0, sentOff: Boolean(p.sentOff) })) }),
+        step: (seconds) => { const wasPaused = pausedLocal; pausedLocal = false; for (let i = 0; i < Math.round(seconds * 60); i++) simulate(1 / 60); pausedLocal = wasPaused; renderPending = true; },
         aim: direction => { aimOverride = direction; },
+        move: (x, z) => state.setAxis(x, z),
         restart: (type, home, spot) => startRestart(type, home, spot),
         foul: (fouledHome, x, z) => { ball.position.set(x, BALL_RADIUS, z); foul(fouledHome, null); },
         shoot: (strength, style = 'normal') => { const wasPaused = pausedLocal; pausedLocal = false; pendingShot = { power: strength, style, at: elapsed }; simulate(1 / 60); pausedLocal = wasPaused; },
@@ -1852,14 +1878,20 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         if (!(ready.venue && ready.physics && ready.model && ready.clips >= clipTotal)) return;
         startMatch();
       }
-      const frameDt = Math.min(clock.getDelta(), 0.25);
+      const realFrameDt = clock.getDelta();
+      const frameDt = Math.min(realFrameDt, 0.25);
       pollGamepad();
+      // The pause menu can reuse the last picture. Keep polling inputs and
+      // redraw after a resize or a debug replay, without shading the pitch
+      // continuously behind an unchanged overlay.
+      if (pausedLocal && !renderPending && !cutCamera) return;
       accumulator += frameDt;
       let steps = 0;
       while (accumulator >= SIM_DT && steps < MAX_SIM_STEPS) { simulate(SIM_DT); accumulator -= SIM_DT; steps++; }
       if (steps === MAX_SIM_STEPS) accumulator = 0;
       if (!pausedLocal) for (const mixer of mixers) mixer.update(frameDt);
-      adaptQuality(frameDt);
+      // Quality reacts to real frame time, even when physics must cap catch-up.
+      adaptQuality(realFrameDt);
       updateRadar();
       updateSetPieceView();
       marker.visible = !setPieceCam; // the over-the-head marker would fill a set-piece close-up
@@ -1892,6 +1924,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (pieceInView && (!setPieceCam || setPieceCam.until !== Infinity)) { setPieceCam = { piece: pieceInView, until: Infinity }; cutCamera = true; }
       if (!pieceInView && setPieceCam?.until === Infinity) setPieceCam.until = elapsed + 1.2;
       if (setPieceCam && (elapsed >= setPieceCam.until || resetAt)) { setPieceCam = null; cutCamera = true; }
+      // Make players 25% larger on phones. Keep the original over-the-shoulder
+      // framing for the already close set-piece camera.
+      const viewZoom = config.device === 'phone' && !setPieceCam ? 1.25 : 1;
+      if (cam.zoom !== viewZoom) { cam.zoom = viewZoom; cam.updateProjectionMatrix(); }
       // Cut straight to the new shot after kickoff resets instead of panning.
       const follow = cutCamera ? 1 : 1 - Math.exp(-3.1 * dt);
       cutCamera = false;
@@ -1929,7 +1965,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         cameraFocus.lerp(new THREE.Vector3(focusX, 0, focusZ), follow);
         const narrow = cam.aspect < 1.2 ? 1.3 : 1; // portrait screens step further back
         cam.position.lerp(new THREE.Vector3(cameraFocus.x, WIDTH * 0.47 * zoom * narrow, cameraFocus.z + WIDTH * 0.6 * zoom * narrow), follow);
-        cam.lookAt(cameraFocus.x, 0.9, cameraFocus.z);
+        // With the closer phone lens, far-touchline play otherwise disappears
+        // behind the scoreboard. Tilt towards it while keeping the same zoom.
+        const lookZ = config.device === 'phone' ? Math.min(cameraFocus.z, (framing ? target.z : ball.position.z) + WIDTH * 0.25) : cameraFocus.z;
+        phoneLookZ += (lookZ - phoneLookZ) * follow;
+        cam.lookAt(cameraFocus.x, 0.9, config.device === 'phone' ? phoneLookZ : cameraFocus.z);
       }
       updateGoalEffects();
       if (cameraShake) {
@@ -1939,6 +1979,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         else cam.position.add(new THREE.Vector3(Math.sin(t * 83) * amount, Math.sin(t * 61 + 1) * amount, Math.sin(t * 71 + 2) * amount * 0.6));
       }
       renderer.render(scene, cam);
+      renderPending = false;
     }
     cam.position.set(0, WIDTH * 0.47, WIDTH * 0.85); cam.lookAt(0, 0.9, WIDTH * 0.25); animate();
 
@@ -2004,7 +2045,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       window.removeEventListener('pointerdown', unlockSpeech); window.removeEventListener('keydown', unlockSpeech);
       host.removeChild(renderer.domElement); renderer.dispose(); engine.current = null;
     };
-  }, [config.home, config.away, config.formation, config.venueId, config.difficulty, cameraMode, kits.home, kits.away, isTouch, preferences.keyboard, preferences.gamepad]);
+  }, [config.home, config.away, config.formation, config.venueId, config.difficulty, config.device, cameraMode, kits.home, kits.away, isTouch, preferences.keyboard, preferences.gamepad]);
 
   useEffect(() => {
     if (seconds > 0) return;
