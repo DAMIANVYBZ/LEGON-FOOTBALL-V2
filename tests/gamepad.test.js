@@ -8,9 +8,9 @@ test('standard controller maps the same physical positions across brands', () =>
   pad.buttons[7].value = 0.6;
   const snapshot = readGamepad(pad);
   assert.equal(snapshot.family, 'Xbox');
-  assert.equal(snapshot.actions.pass, true);
-  assert.equal(snapshot.actions.sprint, true);
-  assert.equal(snapshot.actions.shoot, false);
+  assert.equal(snapshot.actions.cross, true);
+  assert.equal(snapshot.actions.r2, true);
+  assert.equal(snapshot.actions.square, false);
   assert.equal(snapshot.x, 0.8);
   assert.equal(snapshot.z, -0.6);
   assert.equal(gamepadFamily('DualSense Wireless Controller'), 'PlayStation');
@@ -21,9 +21,9 @@ test('standard controller maps the same physical positions across brands', () =>
 test('custom gamepad bindings change the action without changing stick movement', () => {
   const pad = { connected: true, id: 'DualSense', mapping: 'standard', axes: [-0.5, 0.4, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
   pad.buttons[2].pressed = true;
-  const result = readGamepad(pad, { pass: 2 });
-  assert.equal(result.actions.pass, true);
-  assert.equal(result.actions.lob, true);
+  const result = readGamepad(pad, { cross: 2 });
+  assert.equal(result.actions.cross, true);
+  assert.equal(result.actions.square, true);
   assert.equal(result.x, -0.5);
   assert.equal(result.z, 0.4);
 });

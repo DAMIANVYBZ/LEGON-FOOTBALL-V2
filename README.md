@@ -65,9 +65,28 @@ The supplied rigged character and 29 animation clips are in `public/`. Jogging, 
 
 Before kickoff, choose Phone, Tablet/iPad or Computer. Phone uses landscape touch controls; Tablet/iPad offers touch or keyboard; Computer uses keyboard only and shows no action buttons. Touch uses a left drag joystick and a compact translucent right-side cluster: △ chip, □ long pass, ○ hold-to-shoot, × pass, Shield, Sprint, Skill and Switch. Keyboard uses WASD to move and aim, Shift to sprint, Q to switch, J to pass/tackle, I for long pass, hold K to shoot, L to chip, H to shield/defend, P for a penalty-style kick, U for an alternate tackle, O for a skill move and Escape to pause.
 
+Controllers (PlayStation, Xbox and generic pads) use the EA FC classic layout. The on-screen hint changes with possession and shows PlayStation symbols or Xbox letters to match the pad.
+
+| Attacking | | Defending | |
+|---|---|---|---|
+| Left stick | Move | Left stick | Move |
+| R1 | Sprint | L1 / right-stick flick | Change player |
+| R2 | Controlled sprint | L2 | Jockey (L2 + R2 sprint jockey) |
+| L2 | Shield | ▢ | Tackle |
+| ✕ | Ground pass | R1 + ▢ | Hard tackle (longer reach, more fouls) |
+| △ | Through pass | ◯ | Slide tackle (from behind is usually a foul) |
+| ▢ | Shoot (hold for power) | ✕ hold | Contain |
+| ◯ | Lob / cross | R1 hold | Teammate contain |
+| R2 + ▢ | Finesse shot | △ hold | Goalkeeper rush out |
+| L1 + ▢ | Chip shot | R3 | Take control of the goalkeeper (again to hand back) |
+| L1 + R1 + ▢ | Power shot | | |
+| L1 + left stick | Strafe dribble | | |
+| Right stick | Skill move | | |
+| L3 + R3 | Player lock (stops automatic switching) | | |
+
 ## Remaining work
 
-The six remaining park scenes are approximations. The supplied LEGONRUSH source contains modeled stadium and Oval scenes but does not expose equivalent standalone models for all those parks. Physics and CPU tactics remain a foundation. Penalty shootout rules, a complete Cup, real-player multiplayer, gamepad support, sound, accounts and shared persistence remain to be built.
+The six remaining park scenes are approximations. The supplied LEGONRUSH source contains modeled stadium and Oval scenes but does not expose equivalent standalone models for all those parks. Physics and CPU tactics remain a foundation. Penalty shootout rules, a complete Cup, real-player multiplayer, accounts and shared persistence remain to be built.
 
 ## Goalkeepers, set pieces and match flow
 

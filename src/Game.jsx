@@ -107,6 +107,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const [loading, setLoading] = useState({ done: false, progress: 0, step: 'Preparing the pitch' });
   const [keeperBall, setKeeperBall] = useState(false);
   const [caption, setCaption] = useState('');
+  const [padPhase, setPadPhase] = useState('attack');
 
   useEffect(() => {
     const host = mount.current;
@@ -277,6 +278,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     let kickoffWaiting = true; // everyone holds position until the kickoff is taken
     let shootHold = false, power = 0, pausedLocal = false, periodEnded = false, lastTouchHome = true, touchSprint = false, shieldHold = false;
     let finesseHold = false, teammateContain = false, jockeyHold = false, keeperRushHold = false, runUntil = 0;
+    // Controller-only holds and modes (EA FC classic layout).
+    let controlledSprint = false, strafeHold = false, containHold = false, sprintJockey = false;
+    let playerLock = false, manualKeeper = false, shotStyle = 'normal', slideUntil = 0, sliding = false, padWant = {};
     let passTarget = -1, passDeadline = 0, passDestination = null;
     let keeperHolding = -1, keeperReleaseAt = 0;
     let keeperHoldStart = 0, throwHold = false, catchFrom = null, catchStart = 0, keeperTarget = -1;
@@ -436,15 +440,18 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       // Finesse shots curl back toward the middle of the goal; crosses curl in
       // toward the box; chips carry backspin; driven shots dip with topspin.
       const kind = crossing ? 'cross' : name === 'chip' ? 'chip' : name === 'pass' || name === 'goalkeeperPass' ? 'pass'
-        : name === 'scissor' ? 'powerShot' : finesseHold ? 'finesse' : 'shot';
+        : name === 'scissor' || name === 'powerShot' ? 'powerShot' : name === 'chipShot' ? 'chip' : finesseHold ? 'finesse' : 'shot';
       const towardMiddle = -(Math.abs(goalLineZ(direction, LENGTH / 2)) > 0.3 ? goalLineZ(direction, LENGTH / 2) : ball.position.z || 1);
       spinBall(spinFor(kind, direction, kind === 'cross' ? -(ball.position.z || 1) : towardMiddle));
       ballVelocity.copy(direction.multiplyScalar(speed * teamAbility)); ballVelocity.y = lift;
       sound.kick(Math.min(1, speed / 28));
-      if (kind === 'shot' || kind === 'powerShot' || kind === 'finesse') { lastShooter = controlled; lastShotAt = elapsed; say('shot', { who: who(controlled), team: hallName(true) }); }
+      if (kind === 'shot' || kind === 'powerShot' || kind === 'finesse' || name === 'chipShot') { lastShooter = controlled; lastShotAt = elapsed; say('shot', { who: who(controlled), team: hallName(true) }); }
       else if (kind === 'cross') say('cross', { team: hallName(true) });
       else if (name === 'goalkeeperPass' && passTarget >= 0) say('through', { who: who(passTarget), team: hallName(true) });
-      lastTouchHome = true; action(person, name === 'goalkeeperPass' ? 'pass' : name, true); show(name === 'pass' ? 'PASS!' : name === 'goalkeeperPass' ? 'THROUGH BALL!' : name === 'chip' ? 'LOFTED PASS!' : 'SHOT!');
+      const animation = { goalkeeperPass: 'pass', chipShot: 'chip', powerShot: 'kick' }[name] || name;
+      lastTouchHome = true; action(person, animation, true);
+      show(name === 'pass' ? 'PASS!' : name === 'goalkeeperPass' ? 'THROUGH BALL!' : name === 'chip' ? 'LOFTED PASS!'
+        : name === 'chipShot' ? 'CHIP SHOT!' : name === 'powerShot' ? 'POWER SHOT!' : finesseHold ? 'FINESSE SHOT!' : 'SHOT!');
     }
     // The teammate a held ball would be thrown to: the one the player aims at,
     // otherwise the best-placed free teammate.
@@ -586,32 +593,72 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       say('foul', { team: hallName(fouledHome) });
       startRestart('freeKick', fouledHome, { x: ball.position.x, z: ball.position.z });
     }
-    function switchPlayer() {
+    // Switch to the teammate nearest the ball, or, with a right-stick flick,
+    // to the teammate lying in the flicked direction.
+    function switchPlayer(direction = null) {
       // In solo play the ball carrier owns control. Manual switching is for defense.
       if (lastTouchHome && (possessor >= 0 || passTarget >= 0)) return;
+      manualKeeper = false;
       let best = controlled, distance = Infinity;
+      const from = people[controlled].motion, size = direction ? Math.hypot(direction.x, direction.z) || 1 : 1;
       people.forEach((person, index) => {
         if (!person.home || person.keeper || index === controlled) return;
-        const next = person.mesh.position.distanceToSquared(ball.position);
+        let next;
+        if (direction) {
+          const dx = person.motion.x - from.x, dz = person.motion.z - from.z, gap = Math.hypot(dx, dz) || 1;
+          const alignment = (dx * direction.x + dz * direction.z) / gap / size;
+          if (alignment < 0.35) return;
+          next = gap * (2 - alignment);
+        } else next = person.mesh.position.distanceToSquared(ball.position);
         if (next < distance) { best = index; distance = next; }
       });
       controlled = best;
       setSelectedPlayer(best + 1);
       show(`PLAYER ${best + 1}`, 0.8);
+      lastAutoSwitch = elapsed + 1.5; // a manual switch is not overridden for two seconds
     }
-    function tackle(move = 'tackle') {
+    // style: 'standing' (▢), 'hard' (R1 + ▢: longer reach, more fouls) or
+    // 'slide' (◯: a lunge that reaches furthest but leaves you on the ground).
+    function tackle(move = 'tackle', style = 'standing') {
       if (keeperHolding >= 0) return;
       const player = people[controlled];
-      if (elapsed < player.nextTackleAt) return;
-      player.nextTackleAt = elapsed + 0.85; action(player, move, true);
-      const opponent = people.find(person => !person.home && !person.keeper && canWinTackle(player.mesh.position, person.mesh.position, ball.position));
-      if (opponent && awayCarrier === people.indexOf(opponent) && fromBehind(player, opponent) && random() < 0.45) { foul(false, opponent); return; }
-      if (opponent && (awayCarrier === people.indexOf(opponent) || opponent.mesh.position.distanceTo(ball.position) < 1.25)) {
+      if (elapsed < player.nextTackleAt || elapsed < slideUntil) return;
+      const slide = style === 'slide';
+      player.nextTackleAt = elapsed + (slide ? 1.5 : style === 'hard' ? 1.1 : 0.85); action(player, slide ? 'tackleAlternate' : move, true);
+      if (slide) {
+        const forward = forwardFromHeading(player.motion.heading);
+        player.motion.vx = forward.x * 7.5; player.motion.vz = forward.z * 7.5;
+        slideUntil = elapsed + 0.75; sliding = true;
+      }
+      challenge(player, style);
+    }
+    // One attempt to win the ball. A slide keeps trying while the lunge
+    // travels (see simulate), so it reaches a carrier a few metres away.
+    // Returns true once the challenge is decided.
+    function challenge(player, style) {
+      const slide = style === 'slide', hard = style === 'hard';
+      let reach = player.mesh.position;
+      if (slide) {
+        const forward = forwardFromHeading(player.motion.heading);
+        reach = player.mesh.position.clone().add(new THREE.Vector3(forward.x * 0.9, 0, forward.z * 0.9));
+      }
+      const wins = person => hard
+        ? Math.hypot(reach.x - ball.position.x, reach.z - ball.position.z) < 1.7 && reach.distanceTo(person.mesh.position) < 2.1 && ball.position.y < 0.7
+        : canWinTackle(reach, person.mesh.position, ball.position);
+      const opponent = people.find(person => !person.home && !person.keeper && wins(person));
+      if (!opponent) return false;
+      const foulChance = slide ? 0.8 : hard ? 0.65 : 0.45;
+      const onBall = awayCarrier === people.indexOf(opponent) || opponent.mesh.position.distanceTo(ball.position) < 1.25;
+      if (onBall && fromBehind(player, opponent) && random() < foulChance) { foul(false, opponent); return true; }
+      if (hard && random() < 0.12) { foul(false, opponent); return true; } // even from the front, a hard tackle can be late
+      if (onBall) {
         action(opponent, 'fallen', true); opponent.actionUntil = elapsed + 1.1;
         ballVelocity.set(3, 0.15, (Math.random() - 0.5) * 2); spinBall();
         awayCarrier = -1; possessor = controlled; passTarget = -1; lastTouchHome = true; events.tackles++; show('TACKLE!');
         say('tackle', { who: who(controlled), team: hallName(true) });
+        return true;
       }
+      return false;
     }
     function pressAction(key) {
       if (key === 'shift') { touchSprint = true; return; }
@@ -637,7 +684,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (key === 'l') kick(18, 'chip', 3.5);
       if (key === 'p') kick(24, 'penaltyKick', 1.5);
       if (key === 'o') action(people[controlled], 'spin', true);
-      if (key === 'u') tackle('tackleAlternate');
+      if (key === 'u') tackle('tackleAlternate', 'slide');
     }
     function releaseAction(key) {
       if (key === 'shift') { touchSprint = false; return; }
@@ -651,7 +698,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (key === 't') { teammateContain = false; return; }
       if (key === 'v') { jockeyHold = false; return; }
       if (key === 'g') { keeperRushHold = false; return; }
-      if (key === 'k' && shootHold) { shootHold = false; if (!pausedLocal) { kick((18 + power * 12) * (finesseHold ? 0.82 : 1), power > 0.8 ? 'scissor' : 'kick', finesseHold ? 1.8 : 0.8 + power * 2.2); if (finesseHold) ballVelocity.z += 1.6 * Math.sign(ballVelocity.z || 1); } power = 0; }
+      if (key === 'k' && shootHold) {
+        shootHold = false;
+        if (!pausedLocal) {
+          if (shotStyle === 'chip') kick(12 + power * 6, 'chipShot', 4.5 + power * 2);
+          else if (shotStyle === 'power') kick(25 + power * 10, 'powerShot', 0.5 + power * 1.4);
+          else { kick((18 + power * 12) * (finesseHold ? 0.82 : 1), power > 0.8 ? 'scissor' : 'kick', finesseHold ? 1.8 : 0.8 + power * 2.2); if (finesseHold) ballVelocity.z += 1.6 * Math.sign(ballVelocity.z || 1); }
+        }
+        power = 0;
+      }
     }
     function keyboardAction(key) {
       if (key === keyboard.sprint) return 'shift';
@@ -688,33 +743,79 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
     window.addEventListener('blur', blur);
 
+    // EA FC classic controller layout: the same button attacks or defends
+    // depending on which side has the ball.
     function pollGamepad() {
       const pad = activeGamepad();
       const snapshot = readGamepad(pad, preferences.gamepad);
       const nextName = snapshot ? `${snapshot.family} controller${snapshot.standard ? '' : ' · generic mapping'}` : '';
       if (nextName !== padName) { padName = nextName; setGamepadStatus(nextName); }
       padAxis.x = snapshot?.x || 0; padAxis.z = snapshot?.z || 0;
-      const bindings = { pass: 'j', shoot: 'k', lob: 'l', through: 'i', switch: 'q', skill: 'o', shield: 'h', sprint: 'shift' };
-      for (const [name, key] of Object.entries(bindings)) {
-        const down = Boolean(snapshot?.actions[name]);
-        if (down && !padActions[name]) pressAction(key);
-        if (!down && padActions[name]) releaseAction(key);
+      const b = snapshot?.actions || {};
+      const pressed = name => b[name] && !padActions[name];
+      const released = name => !b[name] && padActions[name];
+      if (pressed('pause')) state.togglePause();
+      const attacking = lastTouchHome;
+      // Held controls: applied when they start or stop, so the keyboard keeps working too.
+      const want = !snapshot ? {} : attacking ? {
+        sprint: b.r1 || b.r2, controlledSprint: b.r2 && !b.r1, shield: b.l2, strafe: b.l1,
+      } : {
+        sprint: b.r2, jockey: b.l2, sprintJockey: b.l2 && b.r2, contain: b.cross, teammate: b.r1, rush: b.triangle,
+      };
+      const apply = {
+        sprint: v => { touchSprint = v; }, controlledSprint: v => { controlledSprint = v; }, shield: v => { shieldHold = v; },
+        strafe: v => { strafeHold = v; }, jockey: v => { jockeyHold = v; }, sprintJockey: v => { sprintJockey = v; },
+        contain: v => { containHold = v; }, teammate: v => { teammateContain = v; }, rush: v => { keeperRushHold = v; },
+      };
+      for (const key of Object.keys(apply)) if (Boolean(want[key]) !== Boolean(padWant[key])) apply[key](Boolean(want[key]));
+      padWant = want;
+      if (snapshot && !pausedLocal) {
+        if (b.l3 && b.r3 && (pressed('l3') || pressed('r3'))) {
+          playerLock = !playerLock; show(playerLock ? 'PLAYER LOCK ON' : 'PLAYER LOCK OFF', 1);
+        } else if (attacking) {
+          if (pressed('cross')) pressAction('j');
+          if (released('cross')) releaseAction('j');
+          if (pressed('triangle')) pressAction('i');
+          if (pressed('circle')) pressAction('l');
+          if (pressed('square')) {
+            shotStyle = b.l1 && b.r1 ? 'power' : b.l1 ? 'chip' : b.r2 ? 'finesse' : 'normal';
+            if (shotStyle === 'finesse') finesseHold = true;
+            pressAction('k');
+          }
+          if (released('square')) { releaseAction('k'); if (shotStyle === 'finesse') finesseHold = false; shotStyle = 'normal'; }
+        } else {
+          if (pressed('square')) tackle('tackle', b.r1 ? 'hard' : 'standing');
+          if (pressed('circle')) tackle('tackleAlternate', 'slide');
+          if (pressed('l1')) switchPlayer();
+          if (pressed('r3') && !b.l3) toggleKeeperControl();
+        }
       }
-      if (snapshot?.actions.pause && !padActions.pause) state.togglePause();
+      // Right stick: a skill move when attacking, a flick to switch player when defending.
       const rightActive = Boolean(snapshot && Math.hypot(snapshot.rightX, snapshot.rightZ) > 0.72);
-      if (rightActive && !padRightActive) {
-        if (lastTouchHome) pressAction('o');
-        else switchPlayer();
+      if (rightActive && !padRightActive && !pausedLocal) {
+        if (attacking) pressAction('o');
+        else switchPlayer({ x: snapshot.rightX, z: snapshot.rightZ });
       }
       padRightActive = rightActive;
-      padActions = snapshot?.actions || {};
+      padActions = b;
+    }
+    // R3 while defending: take the goalkeeper yourself, and press again to hand back.
+    function toggleKeeperControl() {
+      if (manualKeeper || controlled === 0) {
+        manualKeeper = false;
+        const next = nearestOf(true, ball.position.x, ball.position.z);
+        if (next >= 0) { controlled = next; setSelectedPlayer(next + 1); }
+        show('KEEPER CONTROL OFF', 0.8);
+      } else if (keeperHolding < 0) {
+        manualKeeper = true; controlled = 0; setSelectedPlayer(1); show('KEEPER CONTROL', 0.8);
+      }
     }
 
     // kickoffHome: which side takes the kickoff (the side that conceded, and
     // the side that did not start the first half for the second).
     let kickoffHome = true, nextKickoffHome = true, kickoffTakeAt = 0;
     function reset(home = nextKickoffHome) {
-      kickoffHome = home; nextKickoffHome = true;
+      kickoffHome = home; nextKickoffHome = true; slideUntil = 0; sliding = false;
       people.forEach(person => {
         person.mesh.position.set(person.spawn[0], 0, person.spawn[1]);
         Object.assign(person.motion, { x: person.spawn[0], z: person.spawn[1], vx: 0, vz: 0,
@@ -772,7 +873,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (lastTouchHome === defendingHome) startRestart('corner', !defendingHome, { x: side * (LENGTH / 2 - 0.4), z: cornerSide * (WIDTH / 2 - 0.4) });
       else startRestart('goalKick', defendingHome, { x: side * (LENGTH / 2 - sixDepth), z: cornerSide * sixHalfWidth * 0.6 });
     }
-    function updateKeeper(person, index, dt) {
+    // manual: the player is moving this keeper (R3); he still dives and saves.
+    function updateKeeper(person, index, dt, manual = false) {
       const out = person.home ? 1 : -1; // from this keeper's goal line into the pitch
       const goalX = ownGoalX(person.home);
       const ability = person.home ? teamAbility : difficulty.keeper;
@@ -801,7 +903,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (!recovering) {
         const targetZ = shot ? clamp(shot.z, -GOAL_WIDTH / 2 + 0.2, GOAL_WIDTH / 2 - 0.2) : spot.z;
         const targetX = shot ? person.motion.x : spot.x;
-        advancePlayer(person.motion, { x: targetX - person.motion.x, z: targetZ - person.motion.z }, dt,
+        if (!manual) advancePlayer(person.motion, { x: targetX - person.motion.x, z: targetZ - person.motion.z }, dt,
           { keeper: true, sprint: oneOnOne || Boolean(shot), ability });
         // Always make the attempt: dive for anything wide, jump for anything
         // high, get the body behind anything struck straight at him.
@@ -894,7 +996,20 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const direction = inputDirection();
           const strength = Math.min(1, direction.length());
           const movement = strength > 0.06 ? direction : new THREE.Vector3();
-          if (shieldHold || jockeyHold) movement.multiplyScalar(shieldHold ? 0.75 : 0.68);
+          const carrierOpponent = awayCarrier >= 0 ? people[awayCarrier] : null;
+          if (containHold && carrierOpponent) {
+            // ✕ held: shadow the carrier from the goal side, a stride off him.
+            const goalX = ownGoalX(true), cx = carrierOpponent.motion.x, cz = carrierOpponent.motion.z;
+            const size = Math.hypot(goalX - cx, cz) || 1;
+            const tx = cx + (goalX - cx) / size * 1.6 - active.motion.x, tz = cz - cz / size * 1.6 - active.motion.z;
+            const gap = Math.hypot(tx, tz);
+            movement.set(gap > 0.3 ? tx / gap : 0, 0, gap > 0.3 ? tz / gap : 0);
+          }
+          if (shieldHold || jockeyHold) movement.multiplyScalar(shieldHold ? 0.75 : sprintJockey ? 0.9 : 0.68);
+          const strafing = strafeHold && possessor === controlled;
+          if (strafing) movement.multiplyScalar(0.62);
+          if (elapsed < slideUntil) movement.set(0, 0, 0); // down after a slide tackle
+          if (sliding && (elapsed >= slideUntil - 0.3 || challenge(active, 'slide'))) sliding = false;
           let activeSpeed = 0;
           if (takingRestart) {
             // The taker stays behind the ball; the stick only aims.
@@ -910,7 +1025,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             activeSpeed = Math.hypot(active.motion.vx, active.motion.vz);
           } else {
             activeSpeed = run(active, { x: movement.x, z: movement.z }, dt,
-              { sprint: touchSprint, dribbling: possessor === controlled, ability: teamAbility });
+              { sprint: touchSprint && !strafing, keeper: controlled === 0 && manualKeeper, dribbling: possessor === controlled,
+                ability: teamAbility * (controlledSprint && possessor === controlled ? 0.93 : 1) });
+            // Strafe dribble keeps facing the goal; jockeying keeps facing the carrier.
+            if (strafing) active.motion.heading = 0;
+            else if (jockeyHold && carrierOpponent) active.motion.heading = Math.atan2(carrierOpponent.motion.z - active.motion.z, carrierOpponent.motion.x - active.motion.x);
           }
           if (!takingRestart) { // a corner taker stands outside the lines
             active.motion.x = clamp(active.motion.x, -LENGTH / 2 + 1.5, LENGTH / 2 - 1.5);
@@ -939,7 +1058,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             if (elapsed - keeperHoldStart > 6) { show('6 SECONDS', 1); say('sixSeconds'); keeperDistribute(0, 'throw', keeperTarget, 0.3); }
           }
           // After the keeper releases the ball, hand control to an outfielder.
-          if (controlled === 0 && keeperHolding !== 0 && possessor !== 0 && !takingRestart && elapsed > controlLockUntil + 0.2) {
+          if (manualKeeper && (lastTouchHome || keeperHolding >= 0)) manualKeeper = false;
+          if (controlled === 0 && !manualKeeper && keeperHolding !== 0 && possessor !== 0 && !takingRestart && elapsed > controlLockUntil + 0.2) {
             const next = passTarget >= 0 ? passTarget : nearestOf(true, ball.position.x, ball.position.z);
             if (next >= 0) { controlled = next; setSelectedPlayer(next + 1); }
           }
@@ -978,7 +1098,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               team(false).filter(p => p.index !== awayCarrier), ownGoalX(true));
           }
           for (const [index, person] of people.entries()) {
-            if (index === controlled) continue;
+            if (index === controlled) {
+              if (person.keeper && manualKeeper && keeperHolding < 0) updateKeeper(person, index, dt, true);
+              continue;
+            }
             if (person.actionName === 'fallen' && elapsed >= person.actionUntil) action(person, 'stand', true);
             if (person.keeper) { updateKeeper(person, index, dt); continue; }
             if ((person.actionName === 'fallen' || person.actionName === 'stand') && person.actionUntil > elapsed) continue;
@@ -1130,7 +1253,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const owner = possessor >= 0 ? possessor : awayCarrier;
             if (owner >= 0) {
               const carrier = people[owner];
-              const carried = carryBall(ball.position, carrier.motion, dt, owner === controlled && touchSprint);
+              const carried = carryBall(ball.position, carrier.motion, dt, owner === controlled && touchSprint && !controlledSprint);
               ball.position.set(carried.x, carried.y, carried.z);
               ballVelocity.set(carrier.motion.vx, 0, carrier.motion.vz);
             }
@@ -1149,7 +1272,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           }
           if (awayPassTarget >= 0 && (elapsed > awayPassDeadline || lastTouchHome)) awayPassTarget = -1;
           boundary();
-          if (defending && !holding && controlled !== 0 && elapsed - lastAutoSwitch > 0.5) {
+          if (defending && !holding && !playerLock && controlled !== 0 && elapsed - lastAutoSwitch > 0.5) {
             let best = controlled, distance = people[controlled].mesh.position.distanceToSquared(ball.position);
             people.forEach((person, index) => {
               if (!person.home || person.keeper) return;
@@ -1188,12 +1311,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // loop. Vite removes this branch from the published production bundle.
     if (import.meta.env.DEV) {
       window.__footballDebug = {
-        snapshot: () => ({ elapsed, possessor, awayCarrier, keeperHolding, passTarget, controlled, restart: restart && { ...restart }, started: ready.started,
+        snapshot: () => ({ elapsed, possessor, awayCarrier, keeperHolding, passTarget, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, started: ready.started,
           physicsReady: Boolean(physics), clipsLoaded: Object.keys(clips).length, events: { ...events },
           ball: ball.position.toArray(), velocity: ballVelocity.toArray(),
           players: people.map(p => ({ x: p.motion.x, z: p.motion.z, heading: p.motion.heading, home: p.home,
             keeper: p.keeper, action: p.actionName, yaw: p.mesh.rotation.y, actionUntil: p.actionUntil })) }),
         step: (seconds) => { const wasPaused = pausedLocal; pausedLocal = false; for (let i = 0; i < Math.round(seconds * 60); i++) simulate(1 / 60); pausedLocal = wasPaused; },
+        tackle: style => tackle(style === 'slide' ? 'tackleAlternate' : 'tackle', style),
         press: key => { const wasPaused = pausedLocal; pausedLocal = false; pressAction(key); pausedLocal = wasPaused; },
         release: key => { const wasPaused = pausedLocal; pausedLocal = false; releaseAction(key); pausedLocal = wasPaused; },
         scenario: ({ ball: position, velocity = [0, 0, 0], owner = -1, players = [], seed = 1, touch }) => {
@@ -1238,7 +1362,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
 
     // The match runs at a fixed SIM_DT, so it plays at the same real-time
     // speed on every device. Animation and the camera use the frame time.
-    let accumulator = 0;
+    let accumulator = 0, shownPhase = 'attack';
     // The loading screen lifts on the kickoff view: everything is in place and
     // the clock starts from here.
     function startMatch() {
@@ -1264,6 +1388,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (!pausedLocal) for (const mixer of mixers) mixer.update(frameDt);
       adaptQuality(frameDt);
       updateRadar();
+      const phase = lastTouchHome ? 'attack' : 'defend';
+      if (phase !== shownPhase) { shownPhase = phase; setPadPhase(phase); }
       if (powerMeter.current) {
         const charging = shootHold || throwHold;
         powerMeter.current.style.opacity = charging ? 1 : 0;
@@ -1399,6 +1525,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     if (orientationBlocked) engine.current?.setPause(true);
   }, [orientationBlocked]);
 
+  // Button names in the controller's own language.
+  const pad = /PlayStation/.test(gamepadStatus)
+    ? { cross: '✕', circle: '◯', square: '▢', triangle: '△', l1: 'L1', r1: 'R1', l2: 'L2', r2: 'R2' }
+    : { cross: 'A', circle: 'B', square: 'X', triangle: 'Y', l1: 'LB', r1: 'RB', l2: 'LT', r2: 'RT' };
   const keeperHint = isTouch ? '' : `KEEPER'S BALL · AIM: ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} · THROW: ${keyLabel(preferences.keyboard.pass)} (HOLD = LONGER) · LONG KICK: ${keyLabel(preferences.keyboard.through)} · PUT DOWN: ${keyLabel(preferences.keyboard.lob)}`;
   const keyboardHint = `MOVE: ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} · PASS: ${keyLabel(preferences.keyboard.pass)} · SHOOT: ${keyLabel(preferences.keyboard.shoot)} · SWITCH: ${keyLabel(preferences.keyboard.switch)} · SPRINT: ${keyLabel(preferences.keyboard.sprint)} · PAUSE: ESC`;
   return <div className={`game-shell ${isTouch ? 'touch-mode' : 'keyboard-mode'}`}>
@@ -1410,7 +1540,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       {preferences.hud.messages && modelStatus && <div className="model-status">{modelStatus}</div>}
       {preferences.hud.radar && <div className="radar" ref={radar}><div className="radar-mid"/>{Array.from({ length: 14 }, (_, index) => <i key={index} className={`dot ${index < 7 ? 'home' : 'away'}`}/>)}<i className="dot ball"/></div>}
       {preferences.hud.score && <div className="hud-bottom"><span>{homeName} <i/></span><span>{awayName} <i/></span></div>}
-      {!isTouch && preferences.hud.hints && <div className="controls-hint">{keeperBall ? (gamepadStatus ? "KEEPER'S BALL · AIM: LEFT STICK · THROW: A / ✕ (HOLD = LONGER) · LONG KICK: Y / △ · PUT DOWN: X / □" : keeperHint) : gamepadStatus ? 'MOVE: LEFT STICK · PASS: A / ✕ · SHOOT: B / ○ · SPRINT: RT / R2 · SWITCH: LB / L1' : keyboardHint}</div>}
+      {!isTouch && preferences.hud.hints && <div className="controls-hint">{keeperBall ? (gamepadStatus ? `KEEPER'S BALL · AIM: L · THROW: ${pad.cross} (HOLD = LONGER) · LONG KICK: ${pad.triangle} · PUT DOWN: ${pad.circle}` : keeperHint)
+        : gamepadStatus ? (padPhase === 'attack'
+          ? `${pad.cross} PASS · ${pad.triangle} THROUGH · ${pad.square} SHOOT · ${pad.circle} LOB · ${pad.r1} SPRINT · ${pad.l2} SHIELD · ${pad.r2}+${pad.square} FINESSE · ${pad.l1}+${pad.square} CHIP`
+          : `${pad.square} TACKLE · ${pad.circle} SLIDE · ${pad.r1}+${pad.square} HARD TACKLE · ${pad.cross} CONTAIN · ${pad.l1} SWITCH · ${pad.l2} JOCKEY · ${pad.triangle} KEEPER RUSH`)
+        : keyboardHint}</div>}
       {isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · SWITCH: PUT DOWN</div>}
       <div className="power-meter" ref={powerMeter}><i/><span>POWER</span></div>
       {caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}

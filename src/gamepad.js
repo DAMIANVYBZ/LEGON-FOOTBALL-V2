@@ -1,8 +1,11 @@
 // The browser's "standard" mapping uses the same face-button positions for
 // Xbox, PlayStation and most PC controllers, regardless of their printed labels.
+// Physical buttons, named by their PlayStation symbols (Xbox: A, B, X, Y,
+// LB, RB, LT, RT, LS, RS). What each does depends on attacking or defending,
+// following the EA FC classic layout (see Game.jsx pollGamepad).
 export const GAMEPAD_BUTTONS = Object.freeze({
-  pass: 0, shoot: 1, lob: 2, through: 3,
-  switch: 4, skill: 5, shield: 6, sprint: 7, pause: 9,
+  cross: 0, circle: 1, square: 2, triangle: 3,
+  l1: 4, r1: 5, l2: 6, r2: 7, pause: 9, l3: 10, r3: 11,
 });
 
 export function gamepadFamily(id = '') {
