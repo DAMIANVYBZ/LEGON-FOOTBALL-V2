@@ -10,6 +10,7 @@ import { abilityForWins, readTeamProgress } from './progression.js';
 import { preloadMatchAssets } from './assets.js';
 import { TRACKS, createMusic } from './music.js';
 import { TEAMS, TEAM_GROUPS, hasTeam, teamShort } from './teams.js';
+import { checkForUpdate, versionLabel } from './version.js';
 import './style.css';
 
 const formations = ['2–2–2', '3–2–1', '2–3–1'];
@@ -46,7 +47,7 @@ function Button({ children, onClick, className = '' }) { return <button classNam
 function SiteHeader({ onBack, cred = true }) { return <header className="site-header">{onBack && <Button onClick={onBack}>‹ &nbsp; BACK</Button>}<Logo/><div className="header-spacer"/>{cred && <><span className="cred">DEMO CRED<br/><strong>{readDemoBookings().coins}</strong></span><span className="profile">♟ &nbsp; Campus Player</span></>}</header>; }
 
 function Soon() { return <small className="soon-tag">COMING SOON</small>; }
-function Menu({ navigate, venue, campusSelected, quickMatch }) { return <div className="paper menu"><SiteHeader onBack={() => navigate('landing')}/><div className="menu-body"><div className="menu-top"><div><p className="eyebrow">WELCOME TO CAMPUS FOOTBALL</p><h1>MAIN MENU</h1></div><div className="job"><b>TODAY'S JOB</b><span>Win a shootout without missing&nbsp; ➜</span><small>○ ○ ○ ○ ○ ○ ○</small></div><div className="ranking"><small>RANKINGS ↗</small><strong>Join the table</strong><span>Sign in to compete</span></div></div><div className="notice">{campusSelected ? `CAMPUS MATCH · ${venue.name.toUpperCase()}` : "Arrive at a campus football field to begin a match."}<span className="notice-actions"><button type="button" onClick={() => navigate("venues")}>CAMPUS FIELDS</button><button type="button" className="quick" onClick={quickMatch}>QUICK MATCH ▶</button></span></div><div className="menu-grid"><button className="tile main-tile" onClick={() => navigate(campusSelected ? 'types' : 'venues')}><div className="pitch-art"><div className="pitch-mid"/><div className="pitch-circle"/><div className="pitch-spot"/></div><div className="tile-copy"><strong>PLAY MATCH</strong><span>Exhibition against the CPU. Pick your hall, your seven and your shape.</span></div></button><button className="tile soon" disabled><Soon/><em>⚽</em><div className="tile-copy"><strong>PENALTY SHOOTOUT</strong><span>Five kicks each, then sudden death.</span></div></button><button className="tile" onClick={() => navigate(campusSelected ? 'training' : 'venues')}><em>▲</em><div className="tile-copy"><strong>TRAINING</strong><span>Free play and penalty practice.</span></div></button><button className="tile soon" disabled><Soon/><em>VS</em><div className="tile-copy"><strong>TEAM PRO</strong><span>Online team play is awaiting campus backend integration.</span></div></button><button className="tile" onClick={() => navigate('settings')}><em>◧</em><div className="tile-copy"><strong>SETTINGS</strong><span>Keyboard, gamepad and touch controls.</span></div></button></div><div className="watch"><strong>◉ &nbsp; WATCH MATCHES</strong><span>Online viewing awaits multiplayer service</span><button className="btn soon" disabled>COMING SOON</button></div></div><footer className="footer">← → ↑ ↓ &nbsp; Move &nbsp;&nbsp;&nbsp; ↵ &nbsp; Select</footer></div>; }
+function Menu({ navigate, venue, campusSelected, quickMatch }) { return <div className="paper menu"><SiteHeader onBack={() => navigate('landing')}/><div className="menu-body"><div className="menu-top"><div><p className="eyebrow">WELCOME TO CAMPUS FOOTBALL</p><h1>MAIN MENU</h1></div><div className="job"><b>TODAY'S JOB</b><span>Win a shootout without missing&nbsp; ➜</span><small>○ ○ ○ ○ ○ ○ ○</small></div><div className="ranking"><small>RANKINGS ↗</small><strong>Join the table</strong><span>Sign in to compete</span></div></div><div className="notice">{campusSelected ? `CAMPUS MATCH · ${venue.name.toUpperCase()}` : "Arrive at a campus football field to begin a match."}<span className="notice-actions"><button type="button" onClick={() => navigate("venues")}>CAMPUS FIELDS</button><button type="button" className="quick" onClick={quickMatch}>QUICK MATCH ▶</button></span></div><div className="menu-grid"><button className="tile main-tile" onClick={() => navigate(campusSelected ? 'types' : 'venues')}><div className="pitch-art"><div className="pitch-mid"/><div className="pitch-circle"/><div className="pitch-spot"/></div><div className="tile-copy"><strong>PLAY MATCH</strong><span>Exhibition against the CPU. Pick your hall, your seven and your shape.</span></div></button><button className="tile soon" disabled><Soon/><em>⚽</em><div className="tile-copy"><strong>PENALTY SHOOTOUT</strong><span>Five kicks each, then sudden death.</span></div></button><button className="tile" onClick={() => navigate(campusSelected ? 'training' : 'venues')}><em>▲</em><div className="tile-copy"><strong>TRAINING</strong><span>Free play and penalty practice.</span></div></button><button className="tile soon" disabled><Soon/><em>VS</em><div className="tile-copy"><strong>TEAM PRO</strong><span>Online team play is awaiting campus backend integration.</span></div></button><button className="tile" onClick={() => navigate('settings')}><em>◧</em><div className="tile-copy"><strong>SETTINGS</strong><span>Keyboard, gamepad and touch controls.</span></div></button></div><div className="watch"><strong>◉ &nbsp; WATCH MATCHES</strong><span>Online viewing awaits multiplayer service</span><button className="btn soon" disabled>COMING SOON</button></div></div><footer className="footer">← → ↑ ↓ &nbsp; Move &nbsp;&nbsp;&nbsp; ↵ &nbsp; Select<span className="footer-version">{versionLabel()}</span></footer></div>; }
 
 function MatchTypes({ navigate }) { return <div className="paper"><SiteHeader onBack={() => navigate('menu')}/><main className="sheet"><p className="eyebrow">MATCH</p><h2>CHOOSE A MATCH TYPE</h2><div className="type-grid"><button onClick={() => navigate('setup')}><b className="watermark">1</b><strong>EXHIBITION</strong><span>One match against the CPU. Any two sides.</span><p>— &nbsp;7 v 7 at your campus field<br/>— &nbsp;Pick difficulty and match length<br/>— &nbsp;Choose your hall side, kits and shape</p></button><button className="soon" disabled><Soon/><b className="watermark">5</b><strong>STADIUM CUP</strong><span>Eight sides, knockout against the CPU. Win three to lift it.</span><p>— &nbsp;Quarter-final to final<br/>— &nbsp;A trophy for the winner</p></button><button className="soon" disabled><Soon/><b className="watermark">2</b><strong>FRIENDLY ONLINE</strong><span>Team Pro will connect through the campus multiplayer service.</span><p>— &nbsp;Up to seven friends per side<br/>— &nbsp;Bots fill open places</p></button></div></main><footer className="footer">← → &nbsp; Move &nbsp;&nbsp; ↵ &nbsp; Select &nbsp;&nbsp; Esc &nbsp; Back</footer></div>; }
 
@@ -146,7 +147,7 @@ function Settings({ navigate, camera, setCamera, preferences, setPreferences }) 
     update({ gamepad });
   };
   const touchPosition = (part, value) => update({ touch: { ...preferences.touch, [part]: value, [part === 'joystick' ? 'actions' : 'joystick']: value === preferences.touch[part === 'joystick' ? 'actions' : 'joystick'] ? (value === 'left' ? 'right' : 'left') : preferences.touch[part === 'joystick' ? 'actions' : 'joystick'] } });
-  return <div className="paper"><SiteHeader onBack={() => navigate('menu')}/><main className="sheet settings-page"><p className="eyebrow">OPTIONS</p><h2>SETTINGS</h2>
+  return <div className="paper"><SiteHeader onBack={() => navigate('menu')}/><main className="sheet settings-page"><p className="eyebrow">OPTIONS</p><h2>SETTINGS</h2><p className="version-line">{versionLabel()}</p>
     <div className="segmented settings-tabs">{['Keyboard','Gamepad','Touch','HUD','Camera'].map(name => <button key={name} className={tab === name ? 'selected' : ''} onClick={() => { setTab(name); setNotice(''); setCapture(''); }}>{name}</button>)}</div>
     {tab === 'Keyboard' && <><div className="settings-head"><h3>KEYBOARD CONTROLS</h3><div className="segmented">{[['classic','CLASSIC · ARROWS'],['wasd','WASD · JIKL']].map(([value,label]) => <button key={value} className={preferences.keyboardPreset === value ? 'selected' : ''} onClick={() => { update({ keyboardPreset: value, keyboard: { ...KEYBOARD_PRESETS[value] } }); setNotice(''); }}>{label}</button>)}</div></div><p className="settings-explainer">Classic uses arrow movement so S/W/D/A can control the ball. Click a key, then press its replacement; occupied keys swap.</p><div className="settings-list settings-remap">{keyboardRows.map(([action,label]) => <div key={action}><span>{label}</span><button className={capture === action ? 'capturing' : ''} onClick={() => { setCapture(action); setNotice('Press a key to assign it.'); }} onKeyDown={event => { if (capture !== action) return; event.preventDefault(); event.stopPropagation(); setKeyboard(action, event.key); }}>{capture === action ? 'PRESS KEY…' : keyLabel(preferences.keyboard[action])}</button></div>)}</div>{notice && <p className="settings-feedback" role="status">{notice}</p>}</>}
     {tab === 'Gamepad' && <><div className="settings-head"><h3>GAMEPAD BUTTONS</h3><button className="btn" onClick={() => update({ gamepad: { ...DEFAULT_PREFERENCES.gamepad } })}>RESET BUTTONS</button></div><GamepadTester/><p className="settings-explainer">PlayStation, Xbox and standard PC pads share button positions. Choose a button for each action; left stick always moves. Occupied buttons swap assignments.</p><div className="settings-list settings-remap">{gamepadRows.map(([action,label]) => <div key={action}><span>{label}</span><select aria-label={`${label} button`} value={preferences.gamepad[action]} onChange={event => setGamepad(action, Number(event.target.value))}>{buttonNames.map((name,index) => <option key={index} value={index}>{name}</option>)}</select></div>)}</div></>}
@@ -306,6 +307,19 @@ function App() {
   // Menu music: off during matches (the crowd takes over). Browsers only allow
   // sound after a click or key press, so it starts on the first one.
   useEffect(() => { music.setTrack(preferences.musicTrack); }, [preferences.musicTrack]);
+  // Check for a newer published build every minute and on returning to the tab.
+  const [update, setUpdate] = useState(null);
+  const padHeld = useRef({ confirm: true, back: true }); // treat buttons as held until seen released
+  useEffect(() => {
+    let stopped = false;
+    const check = () => checkForUpdate().then(live => { if (live && !stopped) setUpdate(live); });
+    const first = setTimeout(check, 5000), timer = setInterval(check, 60000);
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stopped = true; clearTimeout(first); clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+  // Never interrupt a match: the banner waits for the menus.
+  const updateBanner = update && page !== 'game' && <div className="update-banner" role="status"><div><strong>NEW UPDATE AVAILABLE</strong><span>{versionLabel(update)}</span></div><button className="btn primary" onClick={() => window.location.reload()}>UPDATE NOW ▶</button></div>;
   useEffect(() => {
     const wanted = page !== 'game' && preferences.hud.music;
     if (!wanted) { music.stop(); return; }
@@ -339,7 +353,9 @@ function App() {
   }, [page, portrait]);
   useEffect(() => {
     if (page === 'game') return;
-    let frame, previous = { confirm: false, back: false }, nextMove = 0;
+    // A button still held from the previous screen must not press this one too,
+    // so the held state carries over between pages.
+    let frame, previous = padHeld.current, nextMove = 0;
     const poll = () => {
       const pad = activeGamepad();
       const input = readGamepad(pad, preferences.gamepad);
@@ -361,6 +377,7 @@ function App() {
         if (input.actions.shoot && !previous.back && !portrait) window.history.back();
         previous = { confirm: input.actions.pass, back: input.actions.shoot };
       } else previous = { confirm: false, back: false };
+      padHeld.current = previous;
       frame = requestAnimationFrame(poll);
     };
     frame = requestAnimationFrame(poll);
@@ -368,7 +385,7 @@ function App() {
   }, [page, portrait, preferences.gamepad]);
 
   if (page === 'game' && !arrivalVenueId) return <><Game key={config.venueId + config.home + config.away + config.formation} config={config} cameraMode={camera} preferences={preferences} exit={() => navigate('menu')} orientationBlocked={portrait}/>{portrait && <OrientationGate/>}</>;
-  if (portrait) return <><ViewportFrame page="landing"><Landing enter={() => {}} explore={() => {}} venue={campusSelected ? getVenue(config.venueId) : null}/></ViewportFrame><OrientationGate/></>;
+  if (portrait) return <>{updateBanner}<ViewportFrame page="landing"><Landing enter={() => {}} explore={() => {}} venue={campusSelected ? getVenue(config.venueId) : null}/></ViewportFrame><OrientationGate/></>;
   let screen;
   if (arrivalVenueId) screen = <ArrivalPrompt venue={getVenue(arrivalVenueId)} onAccept={acceptArrival} onDecline={() => window.history.back()}/>;
   else if (page === 'landing') screen = <Landing enter={() => navigate('menu')} explore={() => navigate('venues')} quick={quickMatch} venue={campusSelected ? getVenue(config.venueId) : null}/>;
@@ -379,7 +396,7 @@ function App() {
   else if (page === 'booking') screen = <Booking config={config} setConfig={setConfig} navigate={navigate}/>;
   else if (page === 'settings') screen = <Settings navigate={navigate} camera={camera} setCamera={setCamera} preferences={preferences} setPreferences={setPreferences}/>;
   else screen = <div className="paper"><SiteHeader onBack={() => window.history.back()}/><main className="sheet"><p className="eyebrow">LEGON FOOTBALL</p><h2>{page.toUpperCase()}</h2><p>This mode is being rebuilt. The exhibition match is playable now.</p><Button className="primary" onClick={() => navigate(campusSelected ? 'setup' : 'venues')}>PLAY EXHIBITION ▶</Button></main></div>;
-  return <ViewportFrame page={arrivalVenueId ? 'arrival' : page}>{screen}</ViewportFrame>;
+  return <>{updateBanner}<ViewportFrame page={arrivalVenueId ? 'arrival' : page}>{screen}</ViewportFrame></>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

@@ -44,8 +44,11 @@ export function readDpad(pad) {
 // Prefer a real controller (standard layout, enough buttons), and among those
 // the one used most recently.
 let lastActive = -1;
-export function activeGamepad(pads = Array.from(globalThis.navigator?.getGamepads?.() || [])) {
-  const candidates = pads.filter(pad => pad?.connected && (pad.buttons?.length || 0) >= 4 && (pad.axes?.length || 0) >= 2);
+export function activeGamepad(pads) {
+  // Read inside the body: as a default parameter, the build tool mistranslates
+  // this optional call and every controller check fails in production.
+  const list = pads || (typeof navigator !== 'undefined' && navigator.getGamepads ? Array.from(navigator.getGamepads()) : []);
+  const candidates = list.filter(pad => pad?.connected && (pad.buttons?.length || 0) >= 4 && (pad.axes?.length || 0) >= 2);
   const touched = candidates.find(pad => pad.buttons.some(b => b.pressed) || pad.axes.slice(0, 4).some(v => Math.abs(v) > 0.5));
   if (touched) lastActive = touched.index;
   const remembered = candidates.find(pad => pad.index === lastActive);
