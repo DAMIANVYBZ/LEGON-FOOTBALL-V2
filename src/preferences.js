@@ -10,7 +10,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   keyboard: KEYBOARD_PRESETS.classic,
   gamepad: GAMEPAD_BUTTONS,
   touch: { joystick: 'left', actions: 'right', size: 1, opacity: 0.97 },
-  hud: { player: true, radar: true, hints: true, score: true, messages: true, sound: true, music: true, commentary: true },
+  hud: { player: true, radar: true, hints: true, score: true, messages: true, sound: true, music: true, commentary: true, vibration: true },
   musicTrack: 'amapiano',
 });
 

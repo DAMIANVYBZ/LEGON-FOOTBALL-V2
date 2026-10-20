@@ -15,6 +15,7 @@ import { createMatchAudio } from './audio.js';
 import { matchKits, teamShort } from './teams.js';
 import { createCommentary, resultLine, scoreLine } from './commentary.js';
 import { playerName } from './players.js';
+import { vibrate } from './haptics.js';
 import { flight, liftFor } from './ballistics.js';
 import { aimShot, gaussian, SHOT_STYLES, spinStyle, stickZone } from './shooting.js';
 import { advancePlayer, carryBall, canWinTackle, forwardFromHeading, meshYawForHeading, pickPassTarget, supportPosition } from './gameplay.js';
@@ -211,26 +212,37 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     arc(0, 0, 0.16);
 
+    // Each goal: a frame that can shudder when struck, and a net whose
+    // strands are cut into short pieces so it can bulge and ripple.
     const netMaterial = new THREE.LineBasicMaterial({ color: 0xdce5df, transparent: true, opacity: 0.48 });
-    function net(points) {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points.map(p => new THREE.Vector3(...p)));
-      fieldGroup.add(new THREE.Line(geometry, netMaterial));
-    }
+    const goalsBySide = {};
     for (const side of [-1, 1]) {
       const front = side * halfLength, back = side * (halfLength + GOAL.depth);
-      const frame = material('#f9faf6', 0.6);
+      const frame = new THREE.Group(); fieldGroup.add(frame);
+      const frameMaterial = material('#f9faf6', 0.6);
       for (const z of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(GOAL.postRadius, GOAL.postRadius, GOAL_HEIGHT, 16), frame);
-        post.position.set(front, GOAL_HEIGHT / 2, z); post.castShadow = true; fieldGroup.add(post);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(GOAL.postRadius, GOAL.postRadius, GOAL_HEIGHT, 16), frameMaterial);
+        post.position.set(front, GOAL_HEIGHT / 2, z); post.castShadow = true; frame.add(post);
       }
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(GOAL.postRadius, GOAL.postRadius, GOAL_WIDTH + GOAL.postRadius * 2, 16), frame);
-      bar.rotation.x = Math.PI / 2; bar.position.set(front, GOAL_HEIGHT, 0); bar.castShadow = true; fieldGroup.add(bar);
-      for (let z = -GOAL_WIDTH / 2; z <= GOAL_WIDTH / 2 + 0.001; z += 0.61) {
-        net([[front, GOAL_HEIGHT, z], [back, GOAL_HEIGHT, z], [back, 0, z]]);
-      }
-      for (let y = 0; y <= GOAL_HEIGHT + 0.001; y += 0.61) {
-        net([[front, y, -GOAL_WIDTH / 2], [back, y, -GOAL_WIDTH / 2], [back, y, GOAL_WIDTH / 2], [front, y, GOAL_WIDTH / 2]]);
-      }
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(GOAL.postRadius, GOAL.postRadius, GOAL_WIDTH + GOAL.postRadius * 2, 16), frameMaterial);
+      bar.rotation.x = Math.PI / 2; bar.position.set(front, GOAL_HEIGHT, 0); bar.castShadow = true; frame.add(bar);
+      const segments = [];
+      const strand = points => {
+        for (let i = 0; i < points.length - 1; i++) {
+          const [a, b] = [points[i], points[i + 1]];
+          const pieces = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 0.3));
+          for (let k = 0; k < pieces; k++) {
+            const at = t => a.map((v, j) => v + (b[j] - v) * t);
+            segments.push(...at(k / pieces), ...at((k + 1) / pieces));
+          }
+        }
+      };
+      for (let z = -GOAL_WIDTH / 2; z <= GOAL_WIDTH / 2 + 0.001; z += 0.61) strand([[front, GOAL_HEIGHT, z], [back, GOAL_HEIGHT, z], [back, 0, z]]);
+      for (let y = 0; y <= GOAL_HEIGHT + 0.001; y += 0.61) strand([[front, y, -GOAL_WIDTH / 2], [back, y, -GOAL_WIDTH / 2], [back, y, GOAL_WIDTH / 2], [front, y, GOAL_WIDTH / 2]]);
+      const base = new Float32Array(segments);
+      const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(base.slice(), 3));
+      const netLines = new THREE.LineSegments(geometry, netMaterial); netLines.frustumCulled = false; fieldGroup.add(netLines);
+      goalsBySide[side] = { side, front, frame, net: netLines, base, ripple: null, shake: null };
     }
 
     const playerRoot = new THREE.Group(); scene.add(playerRoot);
@@ -1129,7 +1141,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     function goal(homeScored) {
       setScore(previous => homeScored ? [previous[0] + 1, previous[1]] : [previous[0], previous[1] + 1]);
-      show('GOAL!', 2.2); goalCooldown = 2.5; resetAt = elapsed + 2.2; sound.goal(); count(homeScored ? 'goals home' : 'goals away');
+      show('GOAL!', 2.2); goalCooldown = 2.5; resetAt = elapsed + 2.2; sound.goal(); feel('goal', 0.08); count(homeScored ? 'goals home' : 'goals away');
       nextKickoffHome = !homeScored; // the side that conceded kicks off
       goals[homeScored ? 0 : 1]++;
       const scorer = lastShooter >= 0 && people[lastShooter].home === homeScored ? who(lastShooter) : '';
@@ -1164,6 +1176,67 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // manual: the player is moving this keeper (R3); he still dives and saves.
     // A cross met at head height in the opponents' box is headed at goal,
     // down toward a corner. Nobody is placed perfectly, so some go wide.
+    // ---- Goal frame and net: ripples, shudders and the feel of them ----
+    let cameraShake = null, lastFrameHitAt = -1, lastNetHitAt = -1;
+    function feel(effect, shakeStrength) {
+      if (preferences.hud.vibration !== false) vibrate(effect, activeGamepad());
+      cameraShake = { at: elapsed, strength: shakeStrength };
+    }
+    // The ball has hit the net: it bulges where the ball struck, then ripples out.
+    function netHit(goalSide, point, speed) {
+      const goal = goalsBySide[goalSide];
+      goal.ripple = { at: elapsed, point: point.clone(), strength: clamp(speed * 0.028, 0.08, 0.5) };
+      if (speed > 6) feel('net', 0.04);
+    }
+    // The ball has struck a post or the bar: the frame shudders.
+    function frameHit(goalSide, bar, speed) {
+      const goal = goalsBySide[goalSide];
+      goal.shake = { at: elapsed, strength: clamp(speed * 0.0025, 0.015, 0.06), bar };
+      goal.ripple = { at: elapsed, point: ball.position.clone(), strength: 0.06 };
+      sound.post(Math.min(1, speed / 25));
+      show(bar ? 'OFF THE BAR!' : 'OFF THE POST!', 1.2); count('woodwork');
+      say('woodwork', { team: hallName(lastTouchHome) });
+      feel('post', 0.18);
+    }
+    // Contact with the woodwork or the net shows up as a sudden change of the
+    // ball's velocity next to it.
+    function checkGoalContact(before) {
+      const change = Math.hypot(ballVelocity.x - before.x, ballVelocity.y - before.y, ballVelocity.z - before.z);
+      if (change < 2.5) return;
+      const goalSide = Math.sign(ball.position.x) || 1, front = goalSide * LENGTH / 2;
+      const near = BALL_RADIUS + GOAL.postRadius + 0.14;
+      const offLine = Math.abs(ball.position.x - front);
+      const post = offLine < near && ball.position.y < GOAL_HEIGHT + 0.1 && Math.abs(Math.abs(ball.position.z) - GOAL_WIDTH / 2) < near;
+      const bar = !post && offLine < near && Math.abs(ball.position.y - GOAL_HEIGHT) < near && Math.abs(ball.position.z) < GOAL_WIDTH / 2 + 0.1;
+      if ((post || bar) && elapsed - lastFrameHitAt > 0.3) { lastFrameHitAt = elapsed; frameHit(goalSide, bar, Math.hypot(before.x, before.y, before.z)); return; }
+      const inNet = Math.abs(ball.position.x) > LENGTH / 2 + 0.1 && Math.abs(ball.position.z) < GOAL_WIDTH / 2 + 0.2 && ball.position.y < GOAL_HEIGHT + 0.2;
+      if (inNet && elapsed - lastNetHitAt > 0.35) { lastNetHitAt = elapsed; netHit(goalSide, ball.position, Math.hypot(before.x, before.y, before.z)); }
+    }
+    // Animate any shuddering frame or rippling net (a few hundred points, only while moving).
+    function updateGoalEffects() {
+      for (const goal of Object.values(goalsBySide)) {
+        if (goal.shake) {
+          const t = elapsed - goal.shake.at, fade = Math.exp(-t / 0.22);
+          const wobble = goal.shake.strength * fade * Math.sin(t * 70);
+          if (goal.shake.bar) goal.frame.position.set(0, wobble * 0.6, 0); else goal.frame.position.set(0, 0, wobble);
+          if (t > 1) { goal.shake = null; goal.frame.position.set(0, 0, 0); }
+        }
+        if (!goal.ripple) continue;
+        const t = elapsed - goal.ripple.at, positions = goal.net.geometry.attributes.position;
+        const array = positions.array, base = goal.base, depth = GOAL.depth;
+        const swing = goal.ripple.strength * Math.exp(-t / 0.45) * Math.cos(t * 13);
+        const { point } = goal.ripple;
+        for (let i = 0; i < array.length; i += 3) {
+          const x = base[i], y = base[i + 1], z = base[i + 2];
+          const backness = Math.min(1, Math.abs(x - goal.front) / depth); // the frame edge stays put
+          const reach = (y - point.y) ** 2 + (z - point.z) ** 2;
+          const pull = backness * Math.exp(-reach / 1.1) * swing;
+          array[i] = x + goal.side * pull; array[i + 1] = y - Math.abs(pull) * 0.25;
+        }
+        positions.needsUpdate = true;
+        if (t > 2) { array.set(base); positions.needsUpdate = true; goal.ripple = null; }
+      }
+    }
     function attackingHeader() {
       if (ball.position.y < 1.05 || ball.position.y > 2.4 || ballVelocity.length() < 5 || keeperHolding >= 0) return;
       const header = people.find(person => !person.keeper && !person.sentOff && elapsed >= (person.nextHeaderAt || 0)
@@ -1318,6 +1391,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           else kick(0, style === 'power' ? 'powerShot' : strength > 0.8 ? 'scissor' : 'kick', 0, { power: strength, style });
         }
         if (resetAt && elapsed >= resetAt) reset(nextKickoffHome);
+        if (resetAt && physics) {
+          // After a goal the ball carries on into the net and drops there.
+          const before = ballVelocity.clone();
+          const next = physics.step(dt, ball.position, ballVelocity, people.map(person => person.mesh.position), -1);
+          ball.position.set(next.position.x, next.position.y, next.position.z);
+          ballVelocity.set(next.velocity.x, next.velocity.y, next.velocity.z);
+          ball.quaternion.set(next.rotation.x, next.rotation.y, next.rotation.z, next.rotation.w);
+          checkGoalContact(before);
+        }
         if (!resetAt) {
           const active = people[controlled];
           const holding = keeperHolding === 0 && controlled === 0;
@@ -1605,10 +1687,12 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             attackingHeader();
           }
           if (physics) {
+            const before = ballVelocity.clone();
             const next = physics.step(dt, ball.position, ballVelocity, people.map(person => person.mesh.position), keeperHolding >= 0 ? keeperHolding : possessor >= 0 ? possessor : awayCarrier);
             ball.position.set(next.position.x, next.position.y, next.position.z);
             ballVelocity.set(next.velocity.x, next.velocity.y, next.velocity.z);
             ball.quaternion.set(next.rotation.x, next.rotation.y, next.rotation.z, next.rotation.w);
+            checkGoalContact(before);
           } else {
             ball.position.addScaledVector(ballVelocity, dt);
             ballVelocity.y -= 9.81 * dt;
@@ -1690,6 +1774,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // loop. Vite removes this branch from the published production bundle.
     if (import.meta.env.DEV) {
       window.__footballDebug = {
+        goalEffects: () => Object.values(goalsBySide).map(g => ({ side: g.side, rippling: Boolean(g.ripple), shaking: Boolean(g.shake), frameOffset: g.frame.position.toArray() })),
         snapshot: () => ({ elapsed, possessor, awayCarrier, keeperHolding, passTarget, passDestination: passDestination?.toArray(), setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, started: ready.started,
           physicsReady: Boolean(physics), clipsLoaded: Object.keys(clips).length, events: { ...events },
           ball: ball.position.toArray(), velocity: ballVelocity.toArray(),
@@ -1841,6 +1926,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         const narrow = cam.aspect < 1.2 ? 1.3 : 1; // portrait screens step further back
         cam.position.lerp(new THREE.Vector3(cameraFocus.x, WIDTH * 0.47 * zoom * narrow, cameraFocus.z + WIDTH * 0.6 * zoom * narrow), follow);
         cam.lookAt(cameraFocus.x, 0.9, cameraFocus.z);
+      }
+      updateGoalEffects();
+      if (cameraShake) {
+        // Felt on every device: a short, fading shake of the view.
+        const t = elapsed - cameraShake.at, amount = cameraShake.strength * Math.exp(-t / 0.18);
+        if (t > 0.8) cameraShake = null;
+        else cam.position.add(new THREE.Vector3(Math.sin(t * 83) * amount, Math.sin(t * 61 + 1) * amount, Math.sin(t * 71 + 2) * amount * 0.6));
       }
       renderer.render(scene, cam);
     }

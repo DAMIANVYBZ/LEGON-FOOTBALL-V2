@@ -96,6 +96,8 @@ Set pieces. Free kicks within 30 m use a low camera over the taker's shoulder; c
 
 Penalties: a foul inside the 18-yard box gives a penalty from the spot instead of a free kick. Everyone else waits outside the box and the keeper stands on his line. Taking one, you aim and strike exactly as at a free kick (reticle, power, spin, timed finishing); the computer keeper has to guess a side as the ball is struck. Facing one, you are the keeper: hold the stick left or right to dive that way at the kick, or leave it to stay central.
 
+Goals and woodwork: after a goal the ball carries on into the net, which bulges where it strikes and ripples out. A shot off the post or bar makes the frame shudder with a metallic ring. You also feel these moments: a controller rumbles (Chrome and Edge drive DualSense, DualShock, Xbox and most pads; Firefox where supported), an Android phone vibrates, and on every device the camera gives a short shake, so iPhone and keyboard players feel it too. Vibration can be switched off in Settings › HUD (src/haptics.js).
+
 Cards: a slide tackle from behind is almost always a red card, a hard tackle from behind often a yellow; a second yellow is a red, and a sent-off player takes no further part.
 
 ## Remaining work

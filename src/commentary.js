@@ -27,6 +27,7 @@ const EVENTS = {
   smother: { priority: 2, lines: ['Brave from the keeper, smothered at the feet.', 'The keeper comes out and claims it.'] },
   tackle: { priority: 1, lines: ['Good tackle from {who}.', 'Won back by {who}.', '{team} win it back.', 'Strong challenge, and {team} have possession.', 'Stolen! {team} on the ball.'] },
   penalty: { priority: 3, excited: true, lines: ['Penalty! The referee points to the spot for {team}!', 'It is a penalty to {team}!', 'Penalty! A big moment here for {team}.'] },
+  woodwork: { priority: 2, excited: true, lines: ['Off the post! So close!', 'It cannons back off the woodwork!', 'The frame of the goal saves them!', 'Rattled the bar!'] },
   yellowCard: { priority: 2, lines: ['A yellow card for {who}.', 'The referee goes to his pocket. Yellow for {team}.', 'Booked! {who} goes into the book.'] },
   redCard: { priority: 3, excited: true, lines: ['Red card! {who} is sent off!', 'Off he goes! {team} are down to fewer men!', 'That is a red card! A reckless challenge from {who}.'] },
   foul: { priority: 2, lines: ['Foul! Free kick to {team}.', 'The referee blows. That was from behind, free kick {team}.', 'A clumsy challenge there. Free kick to {team}.'] },

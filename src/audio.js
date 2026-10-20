@@ -2,7 +2,7 @@
 // Every call is safe when audio is unavailable or switched off.
 export function createMatchAudio(enabled = true) {
   const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!Context) return { kick() {}, whistle() {}, goal() {}, crowd() {}, setEnabled() {}, resume() {}, dispose() {} };
+  if (!Context) return { kick() {}, whistle() {}, post() {}, goal() {}, crowd() {}, setEnabled() {}, resume() {}, dispose() {} };
   const context = new Context();
   const master = context.createGain();
   master.gain.value = enabled ? 0.8 : 0;
@@ -61,6 +61,14 @@ export function createMatchAudio(enabled = true) {
         tone(2350, now + start, length, 0.09, 'triangle');
         tone(2490, now + start, length, 0.06, 'triangle');
       }
+    },
+    // The ring of a ball striking a metal post or bar.
+    post(power = 0.6) {
+      const now = context.currentTime;
+      tone(880, now, 0.45, 0.12 * (0.5 + power), 'triangle');
+      tone(1320, now, 0.3, 0.08 * (0.5 + power), 'sine');
+      tone(2210, now, 0.18, 0.05 * (0.5 + power), 'sine');
+      burst({ duration: 0.12, frequency: 3200, q: 2, volume: 0.25 + power * 0.25 });
     },
     goal() {
       burst({ duration: 3.2, frequency: 1100, q: 0.5, volume: 0.5, attack: 0.25 });
