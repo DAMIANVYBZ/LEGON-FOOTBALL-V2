@@ -75,6 +75,12 @@ A loading screen stays up until the venue, all players, every animation and the 
 
 CPU ball carriers choose between shooting (aimed away from the keeper, accuracy by difficulty), passing to free teammates, through balls, crosses and dribbling past defenders (`src/cpuBrain.js`). Your AI teammates mark goal-side, one closes down the carrier, and they tackle. Balls over the goal line give corners or goal kicks by last touch; tackles from behind are often fouls and give free kicks, with the defending side kept 7 m away. Players have stamina, shots and long throws show a power bar, and the match has crowd, kick, whistle and goal sounds (toggle in Settings → HUD). The menus play music generated live in `src/music.js` (no audio files, no licence needed): Campus Amapiano (default) or Stadium Anthem, chosen or switched off under Settings → HUD → Menu music. It fades out at kickoff.
 
+## Commentary and player names
+
+Matches have spoken commentary through the device's own voice (Web Speech API), with on-screen captions: no audio files, a few kilobytes of code (`src/commentary.js`). It calls kickoffs, shots, saves, goals with the score, tackles, fouls, corners, throw-ins, half and full time, and build-up play, naming the halls. Goals interrupt anything; minor moments are skipped while the commentator is talking, and the same kind of call is not repeated within ten seconds. Switch it off in Settings → HUD → Commentary.
+
+When the campus game supplies usernames, the commentator uses them for the player on the ball. Pass them with `/?player=Name` (the solo player), `window.MonkeyPostCampus.setPlayerNames({ solo, home, away })`, or a `postMessage` of `{ type: 'monkeypost:players', solo, home, away }`, where `home` and `away` map team slots (0 = keeper, 1-6 outfield) to usernames (`src/players.js`).
+
 ## Downloads, versions and updates
 
 The 29 player animations are served as one compact file, `public/animations/clips.json` (about 1 MB compressed), instead of 36 MB of FBX files that each carried a copy of the character. Rebuild it with `python tools/build_clips.py` (dev server running) after adding or changing an animation. The UG Stadium and Athletic Oval GLBs had the parent game's culling data stripped (`node tools/strip_glb_extras.mjs`) and were then meshopt-compressed (`npx @gltf-transform/cli meshopt`): 10.8 MB to 0.46 MB and 6.8 MB to 0.2 MB.

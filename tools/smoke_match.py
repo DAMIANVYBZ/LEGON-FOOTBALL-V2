@@ -50,7 +50,8 @@ async def main():
   await page.keyboard.press('a')
   await page.keyboard.press('Escape')
   crossed=await page.evaluate("(()=>{const d=window.__footballDebug;const start=d.snapshot();d.step(3);return {target:start.passTarget,lift:start.velocity[1],end:d.snapshot().possessor}})()")
-  assert crossed['target']==6 and crossed['lift']>=4 and crossed['end']==6,crossed
+  # Lift is read a frame or two after the kick, once gravity has acted; a ground pass is about 0.15.
+  assert crossed['target']==6 and crossed['lift']>=3 and crossed['end']==6,crossed
   print('PASS: lofted cross, attacking run and reception',flush=True)
   # A goal and a complete two-half match exercise result persistence. Opponents
   # are placed far away for this clock/result test, not for gameplay scenarios.
