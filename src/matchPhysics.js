@@ -1,5 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { BALL, GOAL, SIM_DT, surfaceFor } from './physicsConfig.js';
+import { airAcceleration } from './ballistics.js';
 
 let initialization;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -61,8 +62,6 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
     return { body: player, collider };
   });
 
-  const area = Math.PI * ballRadius * ballRadius;
-  const aero = 0.5 * BALL.airDensity * area / BALL.mass;
   const scatter = random(Math.round(length * 1000 + width));
 
   const spin = { x: 0, y: 0, z: 0 };
@@ -91,17 +90,9 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
       setSpin({ x: 0, y: 0, z: 0 });
       return;
     }
-    const crisis = clamp((speed - BALL.dragCrisisStart) / (BALL.dragCrisisEnd - BALL.dragCrisisStart), 0, 1);
-    const drag = aero * (BALL.dragLowSpeed + (BALL.dragHighSpeed - BALL.dragLowSpeed) * crisis) * speed;
-    let ax = -drag * v.x, ay = -drag * v.y, az = -drag * v.z;
+    // Drag always; Magnus curve only in the air (src/ballistics.js).
+    let { x: ax, y: ay, z: az } = airAcceleration(v, w, ballRadius, !onGround);
     if (!onGround) {
-      const cx = w.y * v.z - w.z * v.y, cy = w.z * v.x - w.x * v.z, cz = w.x * v.y - w.y * v.x;
-      const cross = Math.hypot(cx, cy, cz);
-      const lift = Math.min(BALL.maxLift, BALL.liftPerSpin * ballRadius * Math.hypot(w.x, w.y, w.z) / speed);
-      if (cross > 1e-6) {
-        const magnus = aero * lift * speed * speed / cross;
-        ax += cx * magnus; ay += cy * magnus; az += cz * magnus;
-      }
       const decay = Math.exp(-BALL.airSpinDecay * dt);
       setSpin({ x: w.x * decay, y: w.y * decay, z: w.z * decay });
     } else {

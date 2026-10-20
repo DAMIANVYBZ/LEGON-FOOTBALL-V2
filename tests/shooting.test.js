@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { aimShot, spinStyle, stickZone } from '../src/shooting.js';
+import { flight, liftFor } from '../src/ballistics.js';
+import { createRandom } from '../src/keeper.js';
+
+const goal = { goalX: 35.5, goalWidth: 7.32, goalHeight: 2.44 };
+
+test('a shot roughly toward goal is assisted into the goal mouth', () => {
+  const random = createRandom(4);
+  // Stick points 2 m outside the post: still assisted, aimed inside it.
+  const aimed = aimShot({ ball: { x: 19.5, z: 0 }, direction: { x: 16, z: 5.7 }, ...goal, power: 0.5, random: () => 0.5 });
+  assert.ok(aimed.assisted);
+  assert.ok(aimed.z < goal.goalWidth / 2 + 0.3, `inside the post: ${aimed.z}`);
+  // Turned well away from goal: no help, so it misses.
+  const wild = aimShot({ ball: { x: 19.5, z: 0 }, direction: { x: 0.5, z: 1 }, ...goal, power: 0.5, random });
+  assert.equal(wild.assisted, false);
+  assert.ok(Math.abs(wild.z) > goal.goalWidth / 2);
+});
+
+test('a normal shot rises with power, a low driven one stays down', () => {
+  const at = (power, style) => aimShot({ ball: { x: 19.5, z: 0 }, direction: { x: 1, z: 0 }, ...goal, power, style, random: () => 0.5 });
+  assert.ok(at(0.08).height < 0.4, 'a tap is along the ground');
+  assert.ok(at(0.5).height > 1, 'past a tenth of the bar it is raised');
+  assert.ok(at(0.9).height > at(0.5).height);
+  assert.ok(at(0.5, 'low').height < 0.4);
+  assert.ok(at(0.5).speed > 25, 'struck hard');
+});
+
+test('the launch solver puts the ball at the wanted height', () => {
+  const from = { x: 0, y: 0.11, z: 0 }, ground = { x: 26, z: 0 }, spin = { x: 0, y: 0, z: -18 };
+  const lift = liftFor({ from, ground, spin, distance: 20, height: 1.8 });
+  const end = flight(from, { ...ground, y: lift }, spin, { distance: 20 }).position;
+  assert.ok(Math.abs(end.y - 1.8) < 0.05, `arrives at ${end.y}`);
+});
+
+test('right-stick gestures pick the set-piece spin', () => {
+  assert.equal(stickZone(0, 0.2), null);
+  assert.equal(stickZone(0, 0.9), 'D');
+  assert.equal(spinStyle(['D', 'U']), 'dip');
+  assert.equal(spinStyle(['D', 'U', 'D']), 'knuckle');
+  assert.equal(spinStyle(['L', 'D', 'R']), 'curlRight');
+  assert.equal(spinStyle(['R', 'U', 'L']), 'curlLeft');
+  assert.equal(spinStyle([]), 'none');
+});

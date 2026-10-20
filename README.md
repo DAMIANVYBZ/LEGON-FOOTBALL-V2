@@ -72,17 +72,31 @@ Controllers (PlayStation, Xbox and generic pads) use the EA FC classic layout. T
 | Left stick | Move | Left stick | Move |
 | R1 | Sprint | L1 / right-stick flick | Change player |
 | R2 | Controlled sprint | L2 | Jockey (L2 + R2 sprint jockey) |
-| L2 | Shield | ▢ | Tackle |
+| L2 | Shield | ▢ | Standing tackle (a foot poked in, or a shoulder barge when running alongside); a miss is a short stumble |
 | ✕ | Ground pass | R1 + ▢ | Hard tackle (longer reach, more fouls) |
-| △ | Through pass | ◯ | Slide tackle (from behind is usually a foul) |
-| ▢ | Shoot (hold for power) | ✕ hold | Contain |
-| ◯ | Lob / cross | R1 hold | Teammate contain |
+| △ | Through pass | ◯ | Slide tackle: reaches furthest; a miss leaves you on the ground for seconds; from behind is almost always a red card |
+| ▢ | Shoot: hold for power; past a tenth of the bar it is a raised shot. Tap ▢ twice for a low driven shot | ✕ hold | Contain |
+| ◯ | Lob / cross, always in the air; hold for more power. A cross goes to the near post, penalty spot or far post, whichever the stick points at | R1 hold | Teammate contain |
 | R2 + ▢ | Finesse shot | △ hold | Goalkeeper rush out |
 | L1 + ▢ | Chip shot | R3 | Take control of the goalkeeper (again to hand back) |
 | L1 + R1 + ▢ | Power shot | | |
 | L1 + left stick | Strafe dribble | | |
 | Right stick | Skill move | | |
 | L3 + R3 | Player lock (stops automatic switching) | | |
+
+Shots are assisted: while you shoot roughly toward goal, the stick picks a spot inside the goal mouth (src/shooting.js). Turn the stick well away and the shot goes where it points. Error grows with power past three quarters of the bar and with distance, and the keeper needs a moment to read each strike, so shots into the corners score more often than shots at him, and nothing is certain either way. A cross met at head height in the box is headed at goal.
+
+Set pieces. Free kicks within 30 m use a low camera over the taker's shoulder; corners use a low camera beside the taker looking into the box; goal kicks and long free kicks stay in the match camera. At a corner or free kick a dotted line shows where the ball will fly, how high and where it lands, updating as you aim and charge:
+
+- Left stick moves the reticle (on the goal for a free kick in range, on the pitch for a cross).
+- Hold ▢ (shot), ◯ (cross or lofted) or ✕ (short pass) to set the power. Two to three and a half bars of five suits most free kicks; more sends it over.
+- During the run-up, the right stick adds spin: down then up dips the ball, a half circle curls it, down-up-down is a knuckleball.
+- Tap ▢ again right as the foot meets the ball for timed finishing (GREEN TIMING is most accurate).
+- A free kick in range has a two-man wall. Goal kicks with ◯ are always lofted: more power goes higher and further.
+
+Penalties: a foul inside the 18-yard box gives a penalty from the spot instead of a free kick. Everyone else waits outside the box and the keeper stands on his line. Taking one, you aim and strike exactly as at a free kick (reticle, power, spin, timed finishing); the computer keeper has to guess a side as the ball is struck. Facing one, you are the keeper: hold the stick left or right to dive that way at the kick, or leave it to stay central.
+
+Cards: a slide tackle from behind is almost always a red card, a hard tackle from behind often a yellow; a second yellow is a red, and a sent-off player takes no further part.
 
 ## Remaining work
 

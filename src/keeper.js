@@ -44,8 +44,8 @@ export function shotOnGoal(ball, velocity, goalX, goalWidth, goalHeight) {
 // Reach from the keeper's centre line, by how high the ball is. A diving
 // keeper covers far more of the goal than a standing one, least at full height.
 export function keeperReach(height, diving) {
-  if (!diving) return height < 0.5 ? 0.9 : 0.75;
-  return height > 1.9 ? 1.3 : height < 0.45 ? 1.55 : 1.75;
+  if (!diving) return height > 1.9 ? 0.85 : 1.1; // a step and a sway of the body
+  return height > 1.9 ? 1.3 : height < 0.45 ? 1.45 : 1.75; // getting down low is slowest
 }
 
 // The result of a ball reaching the keeper: 'catch', 'parry', 'spill',
@@ -59,10 +59,11 @@ export function saveOutcome({ gap, height, speed, diving, ability = 1, random = 
     const chance = clamp(1.1 - 0.5 * stretch - 0.25 * clamp((speed - 12) / 16, 0, 1), 0.2, 0.95) * clamp(ability, 0.8, 1.2);
     if (random() > chance) return 'miss';
   }
-  if (height > 1.7 && speed > 17 && stretch < 0.5) return 'punch';
+  // Hard and high: tipped over or punched away rather than held.
+  if (height > 2 && speed > 27 && stretch < 0.8) return 'punch';
   // Held when it comes at a comfortable height: firm shots near the body,
   // softer ones at a stretch. Anything else is pushed away or spilled.
-  const catchable = height > 0.15 && height < 1.95 && (stretch < 0.45 ? speed < 23 * ability : stretch < 0.75 && speed < 16 * ability);
+  const catchable = height > 0.15 && height < 2.35 && (stretch < 0.45 ? speed < 31 * ability : stretch < 0.75 && speed < 18 * ability);
   if (catchable) return 'catch';
   return random() < 0.75 ? 'parry' : 'spill';
 }

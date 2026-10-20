@@ -25,7 +25,7 @@ async def main():
     if(d.snapshot().controlled!==0)throw Error('You do not control the keeper after his catch');d.step(0.4);d.press('j');d.release('j');let released=d.snapshot();results.push({name:'keeper distribution',held:released.keeperHolding,velocity:released.velocity});
     if(released.keeperHolding>=0||released.velocity[0]<=0)throw Error('Keeper failed to throw upfield');
     const held=scenario('keeper six-second rule',{ball:[-31,1,0],velocity:[-10,0,0],players:[{index:0,x:-34,z:0}]},.5);if(held.held!==0)throw Error('Keeper did not catch');d.step(6.5);if(d.snapshot().keeperHolding===0)throw Error('Keeper held the ball past six seconds');results.push({name:'six seconds',velocity:d.snapshot().velocity});
-    const punched=scenario('high fast shot punch',{ball:[-31,2.2,0],velocity:[-22,0,0],players:[{index:0,x:-34,z:0}]},.25);
+    const punched=scenario('high fast shot punch',{ball:[-31,2.3,0],velocity:[-29,0,0],players:[{index:0,x:-34,z:0}]},.25);
     if(punched.events.punches<1||punched.velocity[0]<=0)throw Error('Keeper failed to punch high shot');
     const dive=scenario('wide shot diving save',{ball:[-29,.7,2],velocity:[-18,0,0],players:[{index:0,x:-34,z:0}]},.45);
     if(dive.events.parries+dive.events.catches<1)throw Error('Keeper failed wide save');
@@ -49,10 +49,11 @@ async def main():
   await page.keyboard.press('Escape')
   await page.keyboard.press('a')
   await page.keyboard.press('Escape')
-  crossed=await page.evaluate("(()=>{const d=window.__footballDebug;const start=d.snapshot();d.step(3);return {target:start.passTarget,lift:start.velocity[1],end:d.snapshot().possessor}})()")
+  crossed=await page.evaluate("(()=>{const d=window.__footballDebug;const start=d.snapshot();d.step(3);const end=d.snapshot();return {target:start.passTarget,lift:start.velocity[1],end:end.possessor,headers:end.events.headers||0}})()")
   # Lift is read a frame or two after the kick, once gravity has acted; a ground pass is about 0.15.
-  assert crossed['target']==6 and crossed['lift']>=3 and crossed['end']==6,crossed
-  print('PASS: lofted cross, attacking run and reception',flush=True)
+  # A cross arrives at head height: the runner either brings it down or heads it at goal.
+  assert crossed['target']==6 and crossed['lift']>=3 and (crossed['end']==6 or crossed['headers']>=1),crossed
+  print('PASS: lofted cross, attacking run and reception or header',flush=True)
   # A goal and a complete two-half match exercise result persistence. Opponents
   # are placed far away for this clock/result test, not for gameplay scenarios.
   await page.evaluate("window.__footballDebug.scenario({ball:[36,.11,0],velocity:[1,0,0]}); window.__footballDebug.step(3)")
