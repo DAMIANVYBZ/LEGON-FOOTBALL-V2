@@ -4,6 +4,26 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const meshYawForHeading = heading => Math.PI / 2 - heading;
 export const forwardFromHeading = heading => ({ x: Math.cos(heading), z: Math.sin(heading) });
 
+// The whole ball must cross a line. If a fast diagonal ball crosses two
+// boundaries in one step, the first crossing determines the restart.
+export function pitchExit(from, to, field, radius = 0.11) {
+  let first = null;
+  for (const [axis, line, half] of [['x', 'goalLine', field.length / 2], ['z', 'touchline', field.width / 2]]) {
+    const limit = half + radius;
+    if (Math.abs(to[axis]) <= limit) continue;
+    const side = Math.sign(to[axis]);
+    const change = to[axis] - from[axis];
+    const time = Math.abs(from[axis]) > limit ? 0 : clamp((side * limit - from[axis]) / change, 0, 1);
+    if (first && first.time <= time) continue;
+    first = { line, side, time, point: {
+      x: from.x + (to.x - from.x) * time,
+      y: from.y + (to.y - from.y) * time,
+      z: from.z + (to.z - from.z) * time,
+    } };
+  }
+  return first;
+}
+
 // Positions are metres and speeds are metres per second. The same movement
 // model drives the human player and CPU players, so possession switches do not
 // change how a footballer accelerates or turns.

@@ -62,9 +62,13 @@ async def development_checks(page):
 
 async def production_checks(page, base):
     assert await page.evaluate('typeof window.__footballDebug') == 'undefined'
-    response = await page.request.get(base + '/version.json')
-    assert response.ok
-    version = await response.json()
+    # Use the browser's route/proxy, just like the game's update check. The
+    # separate Node request client may not share the cloud browser's network.
+    version = await page.evaluate('''async () => {
+      const response=await fetch('/version.json', {cache:'no-store'});
+      if(!response.ok)throw Error('Version request failed: '+response.status);
+      return response.json();
+    }''')
     assert version['commit'] and version['builtAt'] and version['id']
     expected = os.environ.get('FOOTBALL_EXPECT_BUILD_ID')
     if expected:
@@ -111,6 +115,26 @@ async def touch_checks(browser, base, errors):
             }''', arg=initial)
         finally:
             await session.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
+        # Resting a second finger on the stick must not release the original
+        # drag when that second finger lifts.
+        first={'id':11,'x':x,'y':y}
+        second={'id':12,'x':stick['x']+stick['width']*.6,'y':y}
+        await session.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[first]})
+        await session.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[first,second]})
+        await session.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[second]})
+        assert await page.locator('.joystick-knob').evaluate('(e)=>e.style.transform')!='translate(0px, 0px)'
+        await session.send('Input.dispatchTouchEvent', {'type':'touchCancel','touchPoints':[]})
+        assert await page.locator('.joystick-knob').evaluate('(e)=>e.style.transform')=='translate(0px, 0px)'
+        shoot=page.get_by_role('button',name='shoot',exact=True)
+        box=await shoot.bounding_box()
+        first={'id':21,'x':box['x']+box['width']*.4,'y':box['y']+box['height']*.5}
+        second={'id':22,'x':box['x']+box['width']*.6,'y':box['y']+box['height']*.5}
+        await session.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[first]})
+        await session.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[first,second]})
+        await session.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[second]})
+        assert 'held' in (await shoot.get_attribute('class')), 'a second finger released the original button'
+        await session.send('Input.dispatchTouchEvent', {'type':'touchCancel','touchPoints':[]})
+        assert 'held' not in (await shoot.get_attribute('class'))
         await page.get_by_role('button', name='pass', exact=True).tap()
         await page.wait_for_function('''() => {
           const message=document.querySelector('.game-message')?.textContent || '';
@@ -118,7 +142,7 @@ async def touch_checks(browser, base, errors):
         }''')
         await page.get_by_role('button', name='PAUSE', exact=False).click()
         await page.get_by_role('heading', name='PAUSED', exact=True).wait_for()
-        print('PASS: production landscape phone starts; touch joystick moves the player, pass and pause controls respond', flush=True)
+        print('PASS: production landscape phone starts; joystick movement, multitouch ownership, pass and pause controls respond', flush=True)
     finally:
         await context.close()
 

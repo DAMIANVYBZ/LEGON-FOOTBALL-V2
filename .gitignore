@@ -2,3 +2,5 @@ node_modules/
 dist/
 .vite/
 work/
+__pycache__/
+*.py[cod]

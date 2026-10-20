@@ -1,7 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advancePlayer, carryBall, canWinTackle, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, supportPosition } from '../src/gameplay.js';
+import { advancePlayer, carryBall, canWinTackle, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
 import { createMatchPhysics } from '../src/matchPhysics.js';
+
+test('play continues until the whole ball crosses either pitch boundary', () => {
+  const field = { length: 71, width: 45 }, centre = { x: 0, y: 0.11, z: 0 };
+  for (const sign of [-1, 1]) {
+    assert.equal(pitchExit(centre, { ...centre, z: sign * 22.54 }, field), null);
+    assert.equal(pitchExit(centre, { ...centre, x: sign * 35.54, z: 8 }, field), null);
+    assert.equal(pitchExit(centre, { ...centre, z: sign * 22.62 }, field).line, 'touchline');
+    const goalLine = pitchExit(centre, { ...centre, x: sign * 35.62, z: 8 }, field);
+    assert.equal(goalLine.line, 'goalLine');
+    assert.equal(goalLine.side, sign);
+  }
+});
+
+test('a diagonal exit awards one restart at the first line crossed', () => {
+  const field = { length: 71, width: 45 };
+  for (const sign of [-1, 1]) {
+    const goalFirst = pitchExit({ x: sign * 35.5, y: 1, z: 22.3 }, { x: sign * 36, y: 0.8, z: 22.8 }, field);
+    assert.equal(goalFirst.line, 'goalLine');
+    assert.ok(Math.abs(goalFirst.point.x - sign * 35.61) < 1e-8);
+    const touchFirst = pitchExit({ x: 35.3, y: 1, z: sign * 22.5 }, { x: 35.8, y: 0.8, z: sign * 23 }, field);
+    assert.equal(touchFirst.line, 'touchline');
+    assert.ok(Math.abs(touchFirst.point.z - sign * 22.61) < 1e-8);
+  }
+});
 
 test('a player accelerates and comes to a stop without instant direction changes', () => {
   const player = { x: 0, z: 0, vx: 0, vz: 0, heading: 0 };

@@ -64,7 +64,7 @@ async def main():
                         report[device]['slowFrameQualitySeconds'] = quality_delta
                         await page.screenshot(path=str(output/'phone-after.png'))
                         await page.keyboard.press('Escape')
-                        for z in [-19, 19]:
+                        for z in [-22, -19, 19, 22]:
                             await page.evaluate('''z => {
                               const d=window.__footballDebug;
                               d.scenario({ball:[.68,.11,z],owner:5,players:[{index:5,x:0,z}]});d.step(.05);
@@ -83,6 +83,8 @@ async def main():
     assert report['phone']['setPiece']['zoom'] == 1
     assert report['phone']['touchline-19']['head'][1] < .59, 'far-touchline player hidden by scoreboard'
     assert abs(report['phone']['touchline19']['foot'][1]) < 1, 'near-touchline player out of frame'
+    assert report['phone']['touchline-22']['head'][1] < .59, 'player at the far line hidden by the scoreboard'
+    assert abs(report['phone']['touchline22']['foot'][1]) < 1, 'newly reachable near-line player out of frame'
     assert report['computer']['kickoff']['zoom'] == report['tablet']['kickoff']['zoom'] == 1
     assert report['computer']['kickoff']['shadowSize'] == report['tablet']['kickoff']['shadowSize'] == 2048
     (output/'camera-check.json').write_text(json.dumps(report, indent=2))
