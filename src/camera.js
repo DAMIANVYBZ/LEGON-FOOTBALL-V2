@@ -34,3 +34,20 @@ export function restartFraming({ piece, taker, aim, goalX, goalWidth, goalHeight
   const focus = centre.clone().addScaledVector(up, -midY * distance * tanV);
   return { position: focus.clone().addScaledVector(back, distance), focus, points, bounds };
 }
+
+// Like the reference camera, favour the possession player and add bounded
+// anticipation. Track across the pitch rather than fitting both touchlines.
+export function gameplayFraming({ ball, velocity, carrier = null, target = null, width, length, aspect, wide = false }) {
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const anchor = target || (carrier ? {
+    x: ball.x * 0.4 + carrier.x * 0.6,
+    z: ball.z * 0.4 + carrier.z * 0.6,
+  } : ball);
+  const leadX = target ? 0 : clamp(velocity.x * 0.18, -2.8, 2.8);
+  const leadZ = target ? 0 : clamp(velocity.z * 0.14, -1.8, 1.8);
+  const focus = new Vector3(clamp(anchor.x + leadX, -length / 2 + 2, length / 2 - 2),
+    0.9 + clamp((ball.y - 0.5) * 0.4, 0, 4), clamp(anchor.z + leadZ, -width / 2, width / 2));
+  // A much closer, lower broadcast view; Wide retains more passing context.
+  const distance = (wide ? 1.28 : 1) * (aspect < 1.2 ? 1.2 : 1);
+  return { focus, position: focus.clone().add(new Vector3(0, width * 0.30 * distance, width * 0.39 * distance)) };
+}

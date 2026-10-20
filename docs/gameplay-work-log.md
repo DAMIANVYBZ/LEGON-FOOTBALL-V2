@@ -172,3 +172,25 @@ Artifacts: `/workspace/playtest-artifacts/fouls-camera-audit/` and
 `/workspace/playtest-artifacts/camera-venues/`. Prefer inline screenshot evidence;
 the user cannot watch supplied MP4 links. Software-rendered browser evidence is
 not a physical-device frame-rate benchmark. Changes remain local, not deployed.
+
+## Closer possession camera (2026-10-20)
+
+User chose to keep Netlify and requested substantially larger players and a
+camera that follows possession instead of covering the stadium. Reviewed
+Google Research Football `match.cpp` camera section (around lines 510–590):
+60% possession-player bias, anticipation and smoothed tracking. Implemented
+our own framing helper with this bias, bounded velocity lead and full lateral
+tracking. Default camera offsets reduced from 47%/60% of pitch width to
+30%/39%, with no fixed near-side focus. Wide is also closer but retains more
+context; behind-player follows either team's possession. Restart framing and
+exponential smoothing remain in place.
+
+At Sarbah midfield, geometric projection predicts players about 71% taller
+than the old default view (desktop 35→60 px at 1280×720; phone 24→41 px at
+844×390). This is a controlled projection comparison, not a Google runtime
+comparison or a frame-rate benchmark. New browser checker saves actual
+screenshots and projected positions in `/workspace/playtest-artifacts/close-camera`.
+All 73 unit tests, the existing phone/tablet/desktop camera browser check and
+production build pass. Netlify builds from GitHub main; direct Netlify access
+remains blocked by the session network proxy, so publishing must not be claimed
+as verified without a live result.

@@ -20,7 +20,7 @@ import { flight, groundPassSpeed, liftFor } from './ballistics.js';
 import { aimShot, aimChip, gaussian, SHOT_STYLES, spinStyle, stickZone } from './shooting.js';
 import { createOffsideTracker, offsidePositions, offsideInterference, goalCrossing } from './rules.js';
 import { assessChallenge } from './challenges.js';
-import { restartFraming } from './camera.js';
+import { restartFraming, gameplayFraming } from './camera.js';
 import { advancePlayer, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
 
 const BALL_RADIUS = 0.11;
@@ -131,7 +131,6 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
     let viewMode = cameraMode;
     const cameraFocus = new THREE.Vector3();
-    let phoneLookZ = WIDTH * 0.25;
     const clock = new THREE.Clock();
     scene.add(new THREE.HemisphereLight(0xf8fcff, 0x466235, 2.2));
     const sun = new THREE.DirectionalLight(0xffe7ba, 2.6);
@@ -2046,8 +2045,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       // Frame the keeper together with his throw target, and the taker
       // together with the box at a set piece.
       const holdingView = keeperHolding === 0 && controlled === 0 && targetRing.visible;
+      const cameraOwner = possessor >= 0 ? possessor : awayCarrier;
       const target = holdingView ? people[0].mesh.position.clone().lerp(targetRing.position, 0.5)
-        : restart ? new THREE.Vector3(restart.spot.x * 0.8, 0, restart.spot.z) : people[controlled].mesh.position;
+        : restart ? new THREE.Vector3(restart.spot.x * 0.8, 0, restart.spot.z) : people[cameraOwner >= 0 ? cameraOwner : controlled].mesh.position;
       // Every new restart owns its own framing. Never retain the pose from a
       // different free kick/corner; release into the broadcast view smoothly.
       const pieceInView = restart && !resetAt ? restart : null;
@@ -2075,29 +2075,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         cam.position.lerp(new THREE.Vector3(target.x - 9, 5.5 + clamp((ball.position.y - 0.5) * 0.4, 0, 3), target.z + 3.2), follow);
         cameraFocus.lerp(new THREE.Vector3(target.x + 9, 1.1 + clamp((ball.position.y - 0.5) * 0.45, 0, 4), target.z), follow);
         cam.lookAt(cameraFocus);
-      } else if (viewMode === 'Wide') {
-        const focusX = THREE.MathUtils.clamp(ball.position.x + ballVelocity.x * 0.2, -LENGTH * 0.35, LENGTH * 0.35);
-        cameraFocus.lerp(new THREE.Vector3(focusX, clamp((ball.position.y - 0.5) * 0.3, 0, 3), WIDTH * 0.2 + ball.position.z * 0.15), follow);
-        cam.position.lerp(new THREE.Vector3(cameraFocus.x, WIDTH * 0.62, cameraFocus.z + WIDTH * 0.72), follow);
-        cam.lookAt(cameraFocus.x, cameraFocus.y + 0.8, cameraFocus.z);
       } else {
-        // Broadcast camera on a gantry beyond the near touchline, high enough
-        // that both touchlines stay in view: nobody is ever behind the camera.
-        // It follows play along the pitch and leans a little toward the ball.
-        const attackingThird = Math.abs(ball.position.x) / (LENGTH / 2);
-        const zoom = THREE.MathUtils.lerp(1, 0.92, THREE.MathUtils.smoothstep(attackingThird, 0.55, 0.95));
-        const lead = THREE.MathUtils.clamp(ballVelocity.x * 0.24, -4, 4);
-        const framing = holdingView || restart;
-        const focusX = THREE.MathUtils.clamp(framing ? target.x : ball.position.x * 0.8 + target.x * 0.2 + lead, -LENGTH / 2 + 8, LENGTH / 2 - 8);
-        const focusZ = WIDTH * 0.25 + THREE.MathUtils.clamp((framing ? target.z : ball.position.z) * 0.3, -WIDTH * 0.15, WIDTH * 0.15);
-        cameraFocus.lerp(new THREE.Vector3(focusX, clamp((ball.position.y - 0.5) * 0.3, 0, 3), focusZ), follow);
-        const narrow = cam.aspect < 1.2 ? 1.3 : 1; // portrait screens step further back
-        cam.position.lerp(new THREE.Vector3(cameraFocus.x, WIDTH * 0.47 * zoom * narrow, cameraFocus.z + WIDTH * 0.6 * zoom * narrow), follow);
-        // With the closer phone lens, far-touchline play otherwise disappears
-        // behind the scoreboard. Tilt towards it while keeping the same zoom.
-        const lookZ = config.device === 'phone' ? Math.min(cameraFocus.z, (framing ? target.z : ball.position.z) + WIDTH * 0.25) : cameraFocus.z;
-        phoneLookZ += (lookZ - phoneLookZ) * follow;
-        cam.lookAt(cameraFocus.x, cameraFocus.y + 0.9, config.device === 'phone' ? phoneLookZ : cameraFocus.z);
+        const carrier = cameraOwner >= 0 ? people[cameraOwner].mesh.position : null;
+        const frame = gameplayFraming({ ball: ball.position, velocity: ballVelocity,
+          carrier, target: holdingView ? target : null, width: WIDTH, length: LENGTH,
+          aspect: cam.aspect, wide: viewMode === 'Wide' });
+        cameraFocus.lerp(frame.focus, follow);
+        cam.position.lerp(frame.position, follow);
+        cam.lookAt(cameraFocus);
       }
       updateGoalEffects();
       if (cameraShake) {
