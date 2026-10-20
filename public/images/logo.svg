@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 290 100" role="img" aria-label="Legon Football">
+  <rect x="2" y="8" width="84" height="84" rx="16" fill="#ffc20e" stroke="#141210" stroke-width="4"/>
+  <circle cx="44" cy="50" r="29" fill="#fff9e8" stroke="#141210" stroke-width="4"/>
+  <path d="m44 34 15 11-6 18H35l-6-18zM44 34V21M59 45l12-4M53 63l7 12M35 63l-7 12M29 45l-12-4" fill="#141210" stroke="#141210" stroke-width="3" stroke-linecap="round"/>
+  <text x="101" y="46" fill="#141210" font-family="Arial,sans-serif" font-size="37" font-weight="900" letter-spacing="-2">LEGON</text>
+  <text x="101" y="77" fill="#141210" font-family="Arial,sans-serif" font-size="27" font-weight="900" letter-spacing=".8">FOOTBALL</text>
+</svg>

@@ -1,0 +1,18 @@
+{
+  "oval": {
+    "url": "/campus/athletic-oval.glb",
+    "includesPitch": true,
+    "bakedPitch": {
+      "length": 100,
+      "width": 60
+    }
+  },
+  "ug-stadium": {
+    "url": "/campus/ug-stadium.glb",
+    "includesPitch": true,
+    "bakedPitch": {
+      "length": 105,
+      "width": 68
+    }
+  }
+}
