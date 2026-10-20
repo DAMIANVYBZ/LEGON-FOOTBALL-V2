@@ -97,6 +97,12 @@ the second finger. Native pointer-event tracing identified that test error;
 the corrected second-finger release checks passed in the built game. It did
 not require another gameplay change.
 
+The live phone pass check initially ran after the longer multitouch sequence,
+when the CPU could already have taken possession. It now checks the pass just
+after kickoff movement, while the player still has the ball, before testing
+multitouch ownership. This preserves the pass assertion without assuming that
+possession survives an unrelated sequence of gestures.
+
 ## Publication
 
 The previous `c727712` deployment was confirmed by the live site's version file.

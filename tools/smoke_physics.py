@@ -115,6 +115,13 @@ async def touch_checks(browser, base, errors):
             }''', arg=initial)
         finally:
             await session.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
+        # Test passing while the kickoff player still has the ball. Later
+        # multi-finger gestures may legitimately give the CPU time to tackle.
+        await page.get_by_role('button', name='pass', exact=True).tap()
+        await page.wait_for_function('''() => {
+          const message=document.querySelector('.game-message')?.textContent || '';
+          return message==='PASS!' || message==='PASS RECEIVED';
+        }''')
         # Resting a second finger on the stick must not release the original
         # drag when that second finger lifts.
         first={'id':11,'x':x,'y':y}
@@ -135,11 +142,6 @@ async def touch_checks(browser, base, errors):
         assert 'held' in (await shoot.get_attribute('class')), 'a second finger released the original button'
         await session.send('Input.dispatchTouchEvent', {'type':'touchCancel','touchPoints':[]})
         assert 'held' not in (await shoot.get_attribute('class'))
-        await page.get_by_role('button', name='pass', exact=True).tap()
-        await page.wait_for_function('''() => {
-          const message=document.querySelector('.game-message')?.textContent || '';
-          return message==='PASS!' || message==='PASS RECEIVED';
-        }''')
         await page.get_by_role('button', name='PAUSE', exact=False).click()
         await page.get_by_role('heading', name='PAUSED', exact=True).wait_for()
         print('PASS: production landscape phone starts; joystick movement, multitouch ownership, pass and pause controls respond', flush=True)
