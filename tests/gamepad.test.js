@@ -27,3 +27,26 @@ test('custom gamepad bindings change the action without changing stick movement'
   assert.equal(result.x, -0.5);
   assert.equal(result.z, 0.4);
 });
+
+test('the D-pad moves, including generic pads that report it as a hat axis', async () => {
+  const { readDpad } = await import('../src/gamepad.js');
+  const buttons = Array.from({ length: 17 }, () => ({ pressed: false, value: 0 }));
+  buttons[15].pressed = true; buttons[12].pressed = true;
+  assert.deepEqual(readDpad({ mapping: 'standard', buttons, axes: [0, 0, 0, 0] }), { x: 1, z: -1 });
+  const hat = value => readDpad({ mapping: '', buttons: [], axes: [0, 0, 0, 0, 0, value] });
+  assert.deepEqual(hat(-1), { x: 0, z: -1 });          // up
+  assert.deepEqual(hat(-1 + 2 / 7 * 2), { x: 1, z: 0 }); // right
+  assert.deepEqual(hat(-1 + 2 / 7 * 4), { x: 0, z: 1 }); // down
+  assert.deepEqual(hat(3.28), { x: 0, z: 0 });         // released
+  const pad = { connected: true, id: 'USB Gamepad', mapping: '', axes: [0, 0, 0, 0, 0, -1], buttons: Array.from({ length: 12 }, () => ({ pressed: false, value: 0 })) };
+  assert.equal(readGamepad(pad).z, -1);
+});
+
+test('a real controller is chosen over other devices Windows lists as gamepads', async () => {
+  const { activeGamepad } = await import('../src/gamepad.js');
+  const button = pressed => ({ pressed, value: pressed ? 1 : 0 });
+  const receiver = { index: 0, connected: true, id: 'Wireless Receiver', mapping: '', axes: [0, 0], buttons: [button(false)] };
+  const xbox = { index: 1, connected: true, id: 'Xbox Controller', mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => button(false)) };
+  assert.equal(activeGamepad([receiver, xbox]), xbox);
+  assert.equal(activeGamepad([null, receiver]), null);
+});

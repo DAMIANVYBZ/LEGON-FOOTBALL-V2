@@ -4,7 +4,7 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import TouchControls from './TouchControls.jsx';
 import { getVenue } from './venues.js';
 import { buildVenueScene } from './VenueScene.js';
-import { readGamepad } from './gamepad.js';
+import { activeGamepad, readGamepad } from './gamepad.js';
 import { keyLabel } from './preferences.js';
 import { abilityForWins, readTeamProgress, recordTeamWin } from './progression.js';
 import { loadAnimation, loadGLTF, loadPlayerModel, loadVenueManifest } from './assets.js';
@@ -639,7 +639,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     window.addEventListener('blur', blur);
 
     function pollGamepad() {
-      const pad = Array.from(navigator.getGamepads?.() || []).find(item => item?.connected);
+      const pad = activeGamepad();
       const snapshot = readGamepad(pad, preferences.gamepad);
       const nextName = snapshot ? `${snapshot.family} controller${snapshot.standard ? '' : ' · generic mapping'}` : '';
       if (nextName !== padName) { padName = nextName; setGamepadStatus(nextName); }

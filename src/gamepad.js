@@ -18,11 +18,37 @@ export function readGamepad(pad, mapping = GAMEPAD_BUTTONS) {
     return Boolean(value?.pressed || value?.value > 0.35);
   };
   const deadzone = value => Math.abs(value || 0) < 0.16 ? 0 : value;
+  const dpad = readDpad(pad);
   return {
     family: gamepadFamily(pad.id),
     standard: pad.mapping === 'standard',
-    x: deadzone(pad.axes?.[0]), z: deadzone(pad.axes?.[1]),
+    // The D-pad moves too; the left stick wins when both are used.
+    x: deadzone(pad.axes?.[0]) || dpad.x, z: deadzone(pad.axes?.[1]) || dpad.z,
     rightX: deadzone(pad.axes?.[2]), rightZ: deadzone(pad.axes?.[3]),
     actions: Object.fromEntries(Object.entries(GAMEPAD_BUTTONS).map(([name, index]) => [name, button(mapping[name] ?? index)])),
   };
+}
+
+// D-pad direction: buttons 12-15 on standard controllers; many generic USB
+// pads report it instead as one "hat" axis stepping from -1 to 1 clockwise.
+export function readDpad(pad) {
+  const button = index => Boolean(pad.buttons?.[index]?.pressed);
+  if (pad.mapping === 'standard') return { x: button(15) - button(14), z: button(13) - button(12) };
+  const hat = pad.axes?.length > 4 ? pad.axes[pad.axes.length - 1] : undefined;
+  if (hat === undefined || hat < -1.05 || hat > 1.05) return { x: 0, z: 0 };
+  const angle = Math.round((hat + 1) / (2 / 7)) * Math.PI / 4; // 0 = up, clockwise
+  return { x: Math.round(Math.sin(angle)) || 0, z: -Math.round(Math.cos(angle)) || 0 };
+}
+
+// Windows lists some keyboards, mice, receivers and headsets as gamepads too.
+// Prefer a real controller (standard layout, enough buttons), and among those
+// the one used most recently.
+let lastActive = -1;
+export function activeGamepad(pads = Array.from(globalThis.navigator?.getGamepads?.() || [])) {
+  const candidates = pads.filter(pad => pad?.connected && (pad.buttons?.length || 0) >= 4 && (pad.axes?.length || 0) >= 2);
+  const touched = candidates.find(pad => pad.buttons.some(b => b.pressed) || pad.axes.slice(0, 4).some(v => Math.abs(v) > 0.5));
+  if (touched) lastActive = touched.index;
+  const remembered = candidates.find(pad => pad.index === lastActive);
+  if (remembered) return remembered;
+  return candidates.sort((a, b) => (b.mapping === 'standard') - (a.mapping === 'standard') || b.buttons.length - a.buttons.length)[0] || null;
 }

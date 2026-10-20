@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Game from './Game.jsx';
-import { readGamepad } from './gamepad.js';
+import { activeGamepad, gamepadFamily, readGamepad } from './gamepad.js';
 import { DEFAULT_PREFERENCES, KEYBOARD_PRESETS, keyLabel, normalizePreferences, readPreferences, savePreferences } from './preferences.js';
 import Landing from './Landing.jsx';
 import { DEFAULT_VENUE, VENUES, getVenue, hasVenue } from './venues.js';
@@ -90,6 +90,32 @@ function Setup({ config, setConfig, navigate, mode = 'match', stage = 'teams' })
   </main></div>;
 }
 
+// Live check of what the browser can see: every controller, the one in use,
+// and the buttons and sticks as they are pressed.
+function GamepadTester() {
+  const [pads, setPads] = useState([]);
+  useEffect(() => {
+    let frame;
+    const poll = () => {
+      const active = activeGamepad();
+      setPads(Array.from(navigator.getGamepads?.() || []).filter(Boolean).map(pad => ({
+        index: pad.index, id: pad.id, standard: pad.mapping === 'standard', inUse: active?.index === pad.index,
+        pressed: pad.buttons.map((b, i) => b.pressed || b.value > 0.35 ? i : -1).filter(i => i >= 0),
+        stick: [pad.axes[0] || 0, pad.axes[1] || 0].map(v => v.toFixed(2)).join(', '),
+      })));
+      frame = requestAnimationFrame(poll);
+    };
+    poll();
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  if (!pads.length) return <div className="pad-tester"><strong>NO CONTROLLER DETECTED</strong><span>Connect it (USB or Bluetooth), then press any button on it. Browsers only show a controller to a page after one of its buttons is pressed.</span></div>;
+  return <div className="pad-tester">{pads.map(pad => <div key={pad.index} className={pad.inUse ? 'in-use' : ''}>
+    <strong>{pad.inUse ? '✓ IN USE · ' : ''}{gamepadFamily(pad.id).toUpperCase()} · {pad.standard ? 'STANDARD LAYOUT' : 'GENERIC LAYOUT'}</strong>
+    <span>{pad.id}</span>
+    <span>Buttons pressed: {pad.pressed.length ? pad.pressed.join(', ') : 'none'} · Left stick: {pad.stick}</span>
+  </div>)}</div>;
+}
+
 function Settings({ navigate, camera, setCamera, preferences, setPreferences }) {
   const [tab, setTab] = useState('Keyboard');
   const [capture, setCapture] = useState('');
@@ -123,7 +149,7 @@ function Settings({ navigate, camera, setCamera, preferences, setPreferences }) 
   return <div className="paper"><SiteHeader onBack={() => navigate('menu')}/><main className="sheet settings-page"><p className="eyebrow">OPTIONS</p><h2>SETTINGS</h2>
     <div className="segmented settings-tabs">{['Keyboard','Gamepad','Touch','HUD','Camera'].map(name => <button key={name} className={tab === name ? 'selected' : ''} onClick={() => { setTab(name); setNotice(''); setCapture(''); }}>{name}</button>)}</div>
     {tab === 'Keyboard' && <><div className="settings-head"><h3>KEYBOARD CONTROLS</h3><div className="segmented">{[['classic','CLASSIC · ARROWS'],['wasd','WASD · JIKL']].map(([value,label]) => <button key={value} className={preferences.keyboardPreset === value ? 'selected' : ''} onClick={() => { update({ keyboardPreset: value, keyboard: { ...KEYBOARD_PRESETS[value] } }); setNotice(''); }}>{label}</button>)}</div></div><p className="settings-explainer">Classic uses arrow movement so S/W/D/A can control the ball. Click a key, then press its replacement; occupied keys swap.</p><div className="settings-list settings-remap">{keyboardRows.map(([action,label]) => <div key={action}><span>{label}</span><button className={capture === action ? 'capturing' : ''} onClick={() => { setCapture(action); setNotice('Press a key to assign it.'); }} onKeyDown={event => { if (capture !== action) return; event.preventDefault(); event.stopPropagation(); setKeyboard(action, event.key); }}>{capture === action ? 'PRESS KEY…' : keyLabel(preferences.keyboard[action])}</button></div>)}</div>{notice && <p className="settings-feedback" role="status">{notice}</p>}</>}
-    {tab === 'Gamepad' && <><div className="settings-head"><h3>GAMEPAD BUTTONS</h3><button className="btn" onClick={() => update({ gamepad: { ...DEFAULT_PREFERENCES.gamepad } })}>RESET BUTTONS</button></div><p className="settings-explainer">PlayStation, Xbox and standard PC pads share button positions. Choose a button for each action; left stick always moves. Occupied buttons swap assignments.</p><div className="settings-list settings-remap">{gamepadRows.map(([action,label]) => <div key={action}><span>{label}</span><select aria-label={`${label} button`} value={preferences.gamepad[action]} onChange={event => setGamepad(action, Number(event.target.value))}>{buttonNames.map((name,index) => <option key={index} value={index}>{name}</option>)}</select></div>)}</div></>}
+    {tab === 'Gamepad' && <><div className="settings-head"><h3>GAMEPAD BUTTONS</h3><button className="btn" onClick={() => update({ gamepad: { ...DEFAULT_PREFERENCES.gamepad } })}>RESET BUTTONS</button></div><GamepadTester/><p className="settings-explainer">PlayStation, Xbox and standard PC pads share button positions. Choose a button for each action; left stick always moves. Occupied buttons swap assignments.</p><div className="settings-list settings-remap">{gamepadRows.map(([action,label]) => <div key={action}><span>{label}</span><select aria-label={`${label} button`} value={preferences.gamepad[action]} onChange={event => setGamepad(action, Number(event.target.value))}>{buttonNames.map((name,index) => <option key={index} value={index}>{name}</option>)}</select></div>)}</div></>}
     {tab === 'Touch' && <><h3>LANDSCAPE TOUCH</h3><p className="settings-explainer">The five controls stay the same: move, pass, hold to shoot, sprint and switch. Move the joystick and action group to suit your hands.</p><div className="settings-options"><label>MOVE JOYSTICK<div className="segmented">{['left','center','right'].map(value => <button key={value} className={preferences.touch.joystick === value ? 'selected' : ''} onClick={() => touchPosition('joystick',value)}>{value.toUpperCase()}</button>)}</div></label><label>ACTION BUTTONS<div className="segmented">{['left','center','right'].map(value => <button key={value} className={preferences.touch.actions === value ? 'selected' : ''} onClick={() => touchPosition('actions',value)}>{value.toUpperCase()}</button>)}</div></label><label>BUTTON SIZE <strong>{Math.round(preferences.touch.size * 100)}%</strong><input type="range" min="0.75" max="1.25" step="0.05" value={preferences.touch.size} onChange={event => update({ touch: { ...preferences.touch, size: Number(event.target.value) } })}/></label><label>BUTTON OPACITY <strong>{Math.round(preferences.touch.opacity * 100)}%</strong><input type="range" min="0.08" max="1" step="0.01" value={preferences.touch.opacity} onChange={event => update({ touch: { ...preferences.touch, opacity: Number(event.target.value) } })}/></label></div></>}
     {tab === 'HUD' && <><h3>ON-SCREEN MATCH DISPLAY</h3><p className="settings-explainer">Choose what stays visible while you play.</p><div className="settings-list settings-hud">{[['player','CONTROLLED PLAYER LABEL'],['radar','PITCH RADAR'],['hints','CONTROL HINTS'],['score','SCOREBOARD'],['messages','MATCH MESSAGES'],['sound','MATCH SOUND']].map(([key,label]) => <label key={key}><span>{label}</span><input type="checkbox" checked={preferences.hud[key]} onChange={event => update({ hud: { ...preferences.hud, [key]: event.target.checked } })}/></label>)}</div><h3>MENU MUSIC</h3><p className="settings-explainer">Plays on the menus and fades out at kickoff.</p><div className="segmented">{['amapiano', 'anthem'].map(id => <button key={id} className={preferences.musicTrack === id ? 'selected' : ''} onClick={() => update({ musicTrack: id, hud: { ...preferences.hud, music: true } })}>{TRACKS[id].title.toUpperCase()}</button>)}<button className={!preferences.hud.music ? 'selected' : ''} onClick={() => update({ hud: { ...preferences.hud, music: false } })}>OFF</button></div></>}
     {tab === 'Camera' && <><h3>CHOOSE CAMERA</h3><div className="segmented camera-select">{['Co-op','Wide','Behind player'].map(name => <button key={name} className={camera === name ? 'selected' : ''} onClick={() => setCamera(name)}>{name}</button>)}</div><p>Co-op follows the ball carrier from a lower side view. Wide shows more of the field. Behind player follows from your team's end.</p></>}
@@ -315,7 +341,7 @@ function App() {
     if (page === 'game') return;
     let frame, previous = { confirm: false, back: false }, nextMove = 0;
     const poll = () => {
-      const pad = Array.from(navigator.getGamepads?.() || []).find(item => item?.connected);
+      const pad = activeGamepad();
       const input = readGamepad(pad, preferences.gamepad);
       if (input) {
         const buttons = Array.from(document.querySelectorAll('button:not(:disabled)')).filter(button => button.getClientRects().length);
