@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { BALL, GOAL, SIM_DT, surfaceFor } from './physicsConfig.js';
 import { airAcceleration } from './ballistics.js';
+import { applySurfaceGrip } from './ballContact.js';
 
 let initialization;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -85,27 +86,28 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
     body.setAngvel({ x: 0, y: 0, z: 0 }, false);
     const speed = Math.hypot(v.x, v.y, v.z);
     const onGround = p.y <= ballRadius + 0.03 && Math.abs(v.y) < 0.6;
-    if (speed < 0.12 && onGround) {
+    if (speed < 0.12 && Math.hypot(w.x, w.z) * ballRadius < 0.12 && onGround) {
       if (speed > 0) body.setLinvel({ x: 0, y: v.y, z: 0 }, true);
       setSpin({ x: 0, y: 0, z: 0 });
       return;
     }
     // Drag always; Magnus curve only in the air (src/ballistics.js).
-    let { x: ax, y: ay, z: az } = airAcceleration(v, w, ballRadius, !onGround);
+    const { x: ax, y: ay, z: az } = airAcceleration(v, w, ballRadius, !onGround);
+    v.x += ax * dt; v.y += ay * dt; v.z += az * dt;
     if (!onGround) {
       const decay = Math.exp(-BALL.airSpinDecay * dt);
       setSpin({ x: w.x * decay, y: w.y * decay, z: w.z * decay });
     } else {
+      applySurfaceGrip(v, w, 9.81 * dt, surface.sliding, ballRadius);
       const horizontal = Math.hypot(v.x, v.z);
       if (horizontal > 0) {
-        const slow = Math.min(horizontal, surface.rolling * dt) / horizontal / dt;
-        ax -= v.x * slow; az -= v.z * slow;
+        const keep = Math.max(0, 1 - surface.rolling * dt / horizontal);
+        v.x *= keep; v.z *= keep;
+        w.x *= keep; w.z *= keep;
       }
-      const blend = Math.min(1, 12 * dt);
-      const roll = { x: v.z / ballRadius, y: 0, z: -v.x / ballRadius };
-      setSpin({ x: w.x + (roll.x - w.x) * blend, y: w.y + (roll.y - w.y) * blend, z: w.z + (roll.z - w.z) * blend });
+      w.y *= Math.exp(-12 * dt);
     }
-    body.setLinvel({ x: v.x + ax * dt, y: v.y + ay * dt, z: v.z + az * dt }, true);
+    body.setLinvel(v, true);
   }
 
   // A landing ball grips the surface and loses some pace; uneven pitches also
@@ -116,7 +118,10 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
     if (v.y < 0.3 || body.translation().y > ballRadius + 0.08) return;
     const angle = (scatter() * 2 - 1) * surface.bounceScatter;
     const cos = Math.cos(angle) * surface.bounceGrip, sin = Math.sin(angle) * surface.bounceGrip;
-    body.setLinvel({ x: v.x * cos - v.z * sin, y: v.y, z: v.x * sin + v.z * cos }, true);
+    const x = v.x, z = v.z;
+    v.x = x * cos - z * sin; v.z = x * sin + z * cos;
+    applySurfaceGrip(v, spin, v.y - before, surface.sliding, ballRadius);
+    body.setLinvel(v, true);
   }
 
   let accumulator = 0;

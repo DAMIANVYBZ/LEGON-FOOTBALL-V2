@@ -18,20 +18,22 @@ export const BALL = {
   // Magnus lift coefficient = liftPerSpin x spin ratio (r x |omega| / |v|).
   liftPerSpin: 0.8, maxLift: 0.3,
   airSpinDecay: 0.05, // per second while airborne
+  inertia: 2 / 3, // I / (mass * radius^2): a football is a thin shell
   restitution: 0.36,
 };
 
 // Each campus surface plays differently: astroturf is fast and true, red earth
 // is slower, livelier and kicks the ball off line on a bounce.
 // rolling: deceleration of a rolling ball in m/s^2.
+// sliding: friction coefficient while the contact point skids on the surface.
 // bounceGrip: share of the horizontal speed kept when the ball lands.
 // bounceScatter: maximum change of direction on a bounce, in radians.
 export const SURFACES = {
-  grass: { restitution: 0.28, rolling: 1.2, bounceGrip: 0.88, bounceScatter: 0 },
-  worn: { restitution: 0.31, rolling: 1.45, bounceGrip: 0.86, bounceScatter: 0.06 },
-  mixed: { restitution: 0.33, rolling: 1.55, bounceGrip: 0.85, bounceScatter: 0.1 },
-  soil: { restitution: 0.38, rolling: 1.8, bounceGrip: 0.82, bounceScatter: 0.16 },
-  astro: { restitution: 0.4, rolling: 0.9, bounceGrip: 0.92, bounceScatter: 0 },
+  grass: { restitution: 0.28, rolling: 1.2, sliding: 0.35, bounceGrip: 0.88, bounceScatter: 0 },
+  worn: { restitution: 0.31, rolling: 1.45, sliding: 0.38, bounceGrip: 0.86, bounceScatter: 0.06 },
+  mixed: { restitution: 0.33, rolling: 1.55, sliding: 0.4, bounceGrip: 0.85, bounceScatter: 0.1 },
+  soil: { restitution: 0.38, rolling: 1.8, sliding: 0.45, bounceGrip: 0.82, bounceScatter: 0.16 },
+  astro: { restitution: 0.4, rolling: 0.9, sliding: 0.3, bounceGrip: 0.92, bounceScatter: 0 },
 };
 export const surfaceFor = name => SURFACES[name] || SURFACES.grass;
 

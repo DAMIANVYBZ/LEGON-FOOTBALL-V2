@@ -27,6 +27,31 @@ test('a normal shot rises with power, a low driven one stays down', () => {
   assert.ok(at(0.5).speed > 25, 'struck hard');
 });
 
+test('unassisted shots keep backward, sideways and diagonal input bearings', () => {
+  const ball = { x: 8, z: 2 };
+  for (const direction of [{ x: -1, z: 0 }, { x: 0, z: -1 }, { x: -0.6, z: 0.8 }]) {
+    const aimed = aimShot({ ball, direction, ...goal, random: createRandom(19) });
+    assert.equal(aimed.assisted, false);
+    const dx = aimed.x - ball.x, dz = aimed.z - ball.z;
+    const alignment = (dx * direction.x + dz * direction.z) / Math.hypot(dx, dz);
+    assert.ok(alignment > 0.99, JSON.stringify({ direction, aimed }));
+  }
+  const assisted = aimShot({ ball, direction: { x: 1, z: 0 }, ...goal, random: createRandom(19) });
+  assert.equal(assisted.x, goal.goalX);
+});
+
+test('trajectory calculations without samples return identical flight states', () => {
+  const from = { x: 3, y: 0.11, z: -2 }, velocity = { x: 22, y: 7, z: 4 }, spin = { x: 1, y: -40, z: -18 };
+  const sampled = flight(from, velocity, spin, { distance: 25 });
+  const direct = flight(from, velocity, spin, { distance: 25, sample: false });
+  assert.deepEqual(direct.position, sampled.position);
+  assert.deepEqual(direct.velocity, sampled.velocity);
+  assert.equal(direct.time, sampled.time);
+  assert.equal(direct.landed, sampled.landed);
+  assert.deepEqual(direct.points, []);
+  assert.ok(sampled.points.length > 10);
+});
+
 test('the launch solver puts the ball at the wanted height', () => {
   const from = { x: 0, y: 0.11, z: 0 }, ground = { x: 26, z: 0 }, spin = { x: 0, y: 0, z: -18 };
   const lift = liftFor({ from, ground, spin, distance: 20, height: 1.8 });

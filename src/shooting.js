@@ -43,7 +43,17 @@ export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power =
   let height = spec.height(power) + gaussian(random) * (style === 'low' ? 0.08 : 0.18 + over * 0.9);
   height = clamp(height, 0.15, goalHeight + 2.5);
   const speed = spec.speed[0] + spec.speed[1] * power;
-  return { z, height, speed, assisted, distance };
+  // Outside the assist cone, preserve the chosen bearing, including sideways
+  // and backward shots. A goal-plane target would turn these back towards goal.
+  let x = goalX;
+  if (!assisted) {
+    const length = Math.hypot(direction.x, direction.z) || 1;
+    const reach = Math.max(8, distance);
+    const error = gaussian(random) * spread;
+    x = ball.x + direction.x / length * reach - direction.z / length * error;
+    z = ball.z + direction.z / length * reach + direction.x / length * error;
+  }
+  return { x, z, height, speed, assisted, distance };
 }
 
 // Set-piece spin from the right stick, drawn during the run-up. The stick's

@@ -53,6 +53,21 @@ test('the ball collides with the ground and keeps travelling after a kick', asyn
   simulation.free();
 });
 
+test('pass assistance prefers an open lane but still respects deliberate aim', () => {
+  const mates = [
+    { index: 1, home: true, x: 15, z: 0 },
+    { index: 2, home: true, x: 15, z: 5 },
+    { index: 3, home: true, x: -15, z: 0 },
+  ];
+  const origin = { x: 0, z: 0 }, aim = { x: 1, z: 0 };
+  assert.equal(pickPassTarget(mates, origin, aim, 5), 1);
+  assert.equal(pickPassTarget(mates, origin, aim, 5, [{ x: 7, z: 0 }]), 2);
+  assert.equal(pickPassTarget(mates, origin, aim, 5, [{ x: 15, z: 0.5 }]), 2);
+  assert.equal(pickPassTarget(mates, origin, { x: -1, z: 0 }, 5, [{ x: -7, z: 0 }]), 3);
+  assert.equal(pickPassTarget(mates.slice(0, 1), origin, aim, 5, [{ x: 7, z: 0 }]), 1);
+  assert.equal(pickPassTarget(mates, origin, aim, 5, [{ x: 25, z: 0 }]), 1, 'opponents beyond the target do not block its lane');
+});
+
 test('a fast ball hits a player instead of passing through their legs', async () => {
   const simulation = await createMatchPhysics({ length: 95, width: 60, goalWidth: 7.32,
     goalHeight: 2.44, ballRadius: 0.11, playerPositions: [{ x: 2, z: 0 }] });

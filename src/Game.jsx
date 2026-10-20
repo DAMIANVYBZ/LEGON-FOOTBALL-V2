@@ -16,7 +16,7 @@ import { matchKits, teamShort } from './teams.js';
 import { createCommentary, resultLine, scoreLine } from './commentary.js';
 import { playerName } from './players.js';
 import { vibrate } from './haptics.js';
-import { flight, liftFor } from './ballistics.js';
+import { flight, groundPassSpeed, liftFor } from './ballistics.js';
 import { aimShot, gaussian, SHOT_STYLES, spinStyle, stickZone } from './shooting.js';
 import { advancePlayer, carryBall, canWinTackle, forwardFromHeading, meshYawForHeading, pickPassTarget, supportPosition } from './gameplay.js';
 
@@ -450,7 +450,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         lift = liftFor({ from, ground, spin, distance, height, minLift });
         if (!spin.y) break;
         // Curl bends the ball off its line: aim off by the miss.
-        const end = flight(from, { ...ground, y: lift }, spin, { distance }).position;
+        const end = flight(from, { ...ground, y: lift }, spin, { distance, sample: false }).position;
         angle -= Math.atan2(end.z - from.z, end.x - from.x) - wanted;
       }
       return { velocity: { x: Math.cos(angle) * speed, y: lift, z: Math.sin(angle) * speed }, spin, distance };
@@ -581,7 +581,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         }, null) : null;
         passTarget = crossing ? nearestOf(true, crossZone.x, crossZone.z, controlled)
           : pickPassTarget(people.map((teammate, index) => ({ index, home: teammate.home && !teammate.sentOff, keeper: teammate.keeper,
-            x: teammate.mesh.position.x, z: teammate.mesh.position.z })), person.mesh.position, direction, controlled);
+            x: teammate.mesh.position.x, z: teammate.mesh.position.z })), person.mesh.position, direction, controlled, team(false, true));
         // A goal kick, or a lofted ball toward nobody: the power bar sets the distance.
         const byPower = name === 'chip' && loft && loft.power > 0.08 && (loft.goalKick || passTarget < 0);
         if (byPower) {
@@ -603,7 +603,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           passDestination = target.clone();
           direction.copy(target).sub(ball.position).setY(0).normalize();
           speed = crossing ? Math.min(27, Math.max(18, target.distanceTo(ball.position) * 0.64))
-            : Math.min(21, Math.max(speed, 8 + target.distanceTo(ball.position) * 0.36));
+            : name === 'chip' ? Math.min(21, Math.max(speed, 8 + target.distanceTo(ball.position) * 0.36))
+            : Math.max(speed, groundPassSpeed(Math.hypot(target.x - ball.position.x, target.z - ball.position.z), venue.surface, name === 'goalkeeperPass' ? 3.5 : 4.5));
           if (crossing) lift = Math.min(7, Math.max(4, target.distanceTo(ball.position) * 0.16));
         }
         passDeadline = elapsed + 4; events.passes++;
@@ -636,7 +637,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const aimed = aimShot({ ball: ball.position, direction, goalX, goalWidth: GOAL_WIDTH, goalHeight: GOAL_HEIGHT,
             power: shot.power, style: shot.style, accuracy: teamAbility * (controlledSprint ? 1.05 : 1), random });
           speed = aimed.speed;
-          launchTo({ x: goalX, z: aimed.z }, aimed.height, speed * teamAbility, SHOT_STYLES[shot.style]?.spin || 'shot', -aimed.z || -ball.position.z || 1);
+          launchTo({ x: aimed.x, z: aimed.z }, aimed.height, speed * teamAbility, SHOT_STYLES[shot.style]?.spin || 'shot', -aimed.z || -ball.position.z || 1);
         }
         // The keeper needs a moment to read the strike.
         people[7].reactAt = elapsed + (0.2 + random() * 0.12) / difficulty.keeper;
@@ -678,11 +679,12 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         destination = from.clone().add(new THREE.Vector3(forward.x, 0, forward.z).multiplyScalar(38));
       }
       const direction = destination.clone().sub(from); const distance = direction.length(); direction.normalize();
-      const speed = mode === 'roll' ? clamp(6 + distance * 0.42, 8, 16) : mode === 'throw' ? clamp(9 + distance * 0.42 + strength * 3, 11, 21) : clamp(13 + distance * 0.3, 20, 27);
-      const lift = mode === 'roll' ? 0.3 : mode === 'throw' ? clamp(1.8 + distance * 0.07, 2, 4.5) : clamp(4 + distance * 0.11, 6, 10);
-      ball.position.set(from.x + direction.x * 0.7, mode === 'throw' ? 1.6 : 0.35, from.z + direction.z * 0.7);
+      const speed = mode === 'roll' ? groundPassSpeed(Math.max(0, distance - 0.7), venue.surface, 4)
+        : mode === 'throw' ? clamp(9 + distance * 0.42 + strength * 3, 11, 21) : clamp(13 + distance * 0.3, 20, 27);
+      const lift = mode === 'roll' ? 0.2 : mode === 'throw' ? clamp(1.8 + distance * 0.07, 2, 4.5) : clamp(4 + distance * 0.11, 6, 10);
+      ball.position.set(from.x + direction.x * 0.7, mode === 'throw' ? 1.6 : mode === 'roll' ? BALL_RADIUS : 0.35, from.z + direction.z * 0.7);
       ballVelocity.copy(direction).multiplyScalar(speed); ballVelocity.y = lift;
-      spinBall(mode === 'kick' ? spinFor('chip', direction) : undefined);
+      spinBall(mode === 'kick' ? spinFor('chip', direction) : mode === 'roll' ? spinFor('pass', direction) : undefined);
       keeperHolding = -1; throwHold = false; power = 0; targetRing.visible = false; setKeeperBall(false);
       controlLockUntil = elapsed + 0.3; awayKickUntil = elapsed + 0.3; lastTouchHome = keeper.home;
       if (keeper.home) { passTarget = receiver ? targetIndex : -1; passDestination = receiver ? destination.clone() : null; passDeadline = elapsed + 4; }
@@ -701,14 +703,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     function cpuPlay(index, kind, target) {
       const person = people[index], attack = person.home ? 1 : -1;
       const from = ball.position.clone().setY(0);
-      let destination, speed, lift, spin;
+      let destination, speed, lift, height;
       if (kind === 'shoot') {
         destination = new THREE.Vector3(target.x, 0, target.z);
-        const distance = destination.distanceTo(from);
         speed = (19 + random() * 6) * difficulty.shot;
-        const flight = distance / speed * 1.12; // drag stretches the flight a little
-        const height = target.high ? 1.6 + random() * 0.6 : 0.25 + random() * 0.4;
-        lift = clamp((height + 4.905 * flight * flight) / flight, 0.2, 9);
+        height = target.high ? 1.6 + random() * 0.6 : 0.25 + random() * 0.4;
       } else {
         const mate = people[target];
         destination = new THREE.Vector3(mate.motion.x, 0, mate.motion.z);
@@ -717,17 +716,21 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         destination.x = clamp(destination.x, -LENGTH / 2 + 4, LENGTH / 2 - 4);
         destination.z = clamp(destination.z, -WIDTH / 2 + 3, WIDTH / 2 - 3);
         const distance = destination.distanceTo(from);
-        if (kind === 'cross') { speed = clamp(distance * 0.62, 15, 25); lift = clamp(distance * 0.16, 4, 7); }
+        if (kind === 'cross') { speed = clamp(distance * 0.62, 15, 25); height = 1.5; }
         else {
-          // Weighted to arrive at a controllable pace: v0^2 = arrival^2 + 2 x deceleration x distance.
+          // Account for the initial skid, drag and this pitch's resistance.
           const arrival = kind === 'through' ? 3 : 5;
-          speed = clamp(Math.sqrt(arrival * arrival + 2 * 1.9 * distance), 7, 20); lift = 0.2;
+          speed = groundPassSpeed(distance, venue.surface, arrival); lift = 0.2;
         }
       }
       const direction = destination.clone().sub(from).normalize();
-      spin = spinFor(kind === 'shoot' ? 'cpuShot' : kind === 'cross' ? 'cross' : 'pass', direction, -(ball.position.z || 1));
-      spinBall(spin);
-      ballVelocity.copy(direction).multiplyScalar(speed); ballVelocity.y = lift;
+      if (kind === 'shoot' || kind === 'cross') {
+        // CPU and human kicks obey the same drag, spin and target-height model.
+        launchTo(destination, height, speed, kind === 'shoot' ? 'cpuShot' : 'cross', -(ball.position.z || 1));
+      } else {
+        spinBall(spinFor('pass', direction));
+        ballVelocity.copy(direction).multiplyScalar(speed); ballVelocity.y = lift;
+      }
       if (person.home) { possessor = -1; passTarget = kind === 'shoot' ? -1 : target; passDestination = kind === 'shoot' ? null : destination; passDeadline = elapsed + 4; }
       else { awayCarrier = -1; awayPassTarget = kind === 'shoot' ? -1 : target; awayPassDestination = kind === 'shoot' ? null : destination; awayPassDeadline = elapsed + 4; }
       lastTouchHome = person.home; awayKickUntil = elapsed + (kind === 'shoot' ? 0.8 : 0.3); controlLockUntil = elapsed + 0.25;
@@ -1775,9 +1778,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     if (import.meta.env.DEV) {
       window.__footballDebug = {
         goalEffects: () => Object.values(goalsBySide).map(g => ({ side: g.side, rippling: Boolean(g.ripple), shaking: Boolean(g.shake), frameOffset: g.frame.position.toArray() })),
-        snapshot: () => ({ elapsed, possessor, awayCarrier, keeperHolding, passTarget, passDestination: passDestination?.toArray(), setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, started: ready.started,
+        snapshot: () => ({ elapsed, score: [...goals], possessor, awayCarrier, keeperHolding, passTarget, passDestination: passDestination?.toArray(), setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, started: ready.started,
           physicsReady: Boolean(physics), clipsLoaded: Object.keys(clips).length, events: { ...events },
-          ball: ball.position.toArray(), velocity: ballVelocity.toArray(),
+          ball: ball.position.toArray(), velocity: ballVelocity.toArray(), spin: physics?.spin(),
           players: people.map(p => ({ x: p.motion.x, z: p.motion.z, heading: p.motion.heading, home: p.home,
             keeper: p.keeper, action: p.actionName, yaw: p.mesh.rotation.y, actionUntil: p.actionUntil })) }),
         step: (seconds) => { const wasPaused = pausedLocal; pausedLocal = false; for (let i = 0; i < Math.round(seconds * 60); i++) simulate(1 / 60); pausedLocal = wasPaused; },
@@ -1786,9 +1789,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         foul: (fouledHome, x, z) => { ball.position.set(x, BALL_RADIUS, z); foul(fouledHome, null); },
         shoot: (strength, style = 'normal') => { const wasPaused = pausedLocal; pausedLocal = false; pendingShot = { power: strength, style, at: elapsed }; simulate(1 / 60); pausedLocal = wasPaused; },
         tackle: style => tackle(style === 'slide' ? 'tackleAlternate' : 'tackle', style),
+        cpuKick: (index, kind, target) => cpuPlay(index, kind, target),
         press: key => { const wasPaused = pausedLocal; pausedLocal = false; pressAction(key); pausedLocal = wasPaused; },
         release: key => { const wasPaused = pausedLocal; pausedLocal = false; releaseAction(key); pausedLocal = wasPaused; },
-        scenario: ({ ball: position, velocity = [0, 0, 0], owner = -1, players = [], seed = 1, touch }) => {
+        scenario: ({ ball: position, velocity = [0, 0, 0], spin = { x: 0, y: 0, z: 0 }, owner = -1, players = [], seed = 1, touch }) => {
           people.forEach(p => { p.sentOff = false; p.yellows = 0; p.mesh.visible = true; }); // each test starts with a full side
           reset(); keeperHolding = -1; random = createRandom(seed); kickoffWaiting = false; possessor = owner >= 0 && people[owner].home ? owner : -1;
           awayCarrier = owner >= 0 && !people[owner].home ? owner : -1;
@@ -1797,7 +1801,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const p = people[index]; Object.assign(p.motion, { x, z, vx: 0, vz: 0, heading: heading ?? (p.home ? 0 : Math.PI) });
             p.mesh.position.set(x, 0, z); p.actionUntil = 0;
           }
-          ball.position.fromArray(position); ballVelocity.fromArray(velocity); physics?.reset(ball.position, ballVelocity);
+          ball.position.fromArray(position); ballVelocity.fromArray(velocity); physics?.reset(ball.position, ballVelocity, spin);
         },
       };
     }

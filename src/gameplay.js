@@ -88,7 +88,7 @@ export function keeperThreat(ball, velocity, keeper, home, ability = 1) {
     result: speed < 14 * ability && lateral < 0.8 && y < 1.95 ? 'catch' : y > 1.7 ? 'punch' : 'parry' };
 }
 
-export function pickPassTarget(teammates, origin, aim, controlled) {
+export function pickPassTarget(teammates, origin, aim, controlled, opponents = []) {
   let best = -1, bestScore = -Infinity;
   for (const player of teammates) {
     if (!player.home || player.keeper || player.index === controlled) continue;
@@ -97,7 +97,20 @@ export function pickPassTarget(teammates, origin, aim, controlled) {
     if (distance < 2 || distance > 45) continue;
     const alignment = (dx * aim.x + dz * aim.z) / distance;
     if (alignment < 0.18) continue;
-    const score = alignment * 4 - Math.abs(distance - 17) * 0.035;
+    // Among similarly aimed teammates prefer a free lane and an unmarked
+    // receiver. Keep the penalty bounded so the stick still chooses the pass.
+    let pressure = 0;
+    for (const opponent of opponents) {
+      const ox = opponent.x - origin.x, oz = opponent.z - origin.z;
+      const along = (ox * dx + oz * dz) / (distance * distance);
+      if (along > 0.05 && along < 0.95) {
+        const gap = Math.hypot(ox - dx * along, oz - dz * along);
+        pressure = Math.max(pressure, clamp((1.8 - gap) / 1.8, 0, 1));
+      }
+      const marked = Math.hypot(opponent.x - player.x, opponent.z - player.z);
+      pressure = Math.max(pressure, clamp((2.4 - marked) / 2.4, 0, 1));
+    }
+    const score = alignment * 4 - Math.abs(distance - 17) * 0.035 - pressure * 1.2;
     if (score > bestScore) { best = player.index; bestScore = score; }
   }
   return best;

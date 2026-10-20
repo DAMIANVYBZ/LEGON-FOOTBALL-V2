@@ -54,9 +54,14 @@ async def main():
   # A cross arrives at head height: the runner either brings it down or heads it at goal.
   assert crossed['target']==6 and crossed['lift']>=3 and (crossed['end']==6 or crossed['headers']>=1),crossed
   print('PASS: lofted cross, attacking run and reception or header',flush=True)
-  # A goal and a complete two-half match exercise result persistence. Opponents
-  # are placed far away for this clock/result test, not for gameplay scenarios.
-  await page.evaluate("window.__footballDebug.scenario({ball:[36,.11,0],velocity:[1,0,0]}); window.__footballDebug.step(3)")
+  # Earlier tackle/counterattack scenarios can score. Establish a real winning
+  # lead for the persistence check instead of assuming the scoreboard is 0-0.
+  needed=await page.evaluate("(()=>{const [home,away]=window.__footballDebug.snapshot().score;return Math.max(1,away-home+1)})()")
+  for _ in range(needed):
+   await page.evaluate("window.__footballDebug.scenario({ball:[36,.11,0],velocity:[1,0,0]}); window.__footballDebug.step(3)")
+  scores=await page.evaluate("window.__footballDebug.snapshot().score")
+  assert scores[0]>scores[1],scores
+  # Opponents are placed far away for the clock/result test, not for gameplay.
   await page.evaluate("window.__footballDebug.scenario({ball:[-.12,.11,0],owner:5,players:Array.from({length:6},(_,i)=>({index:i+8,x:5000,z:0}))});window.__footballDebug.step(156)")
   await page.get_by_role('button',name='SECOND HALF').wait_for(timeout=10000)
   await page.get_by_role('button',name='SECOND HALF').click()
