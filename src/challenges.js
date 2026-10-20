@@ -15,3 +15,21 @@ export function assessChallenge(tackler, carrier, ball, { style = 'standing', re
     : style === 'slide' || approachSpeed > 5 ? 'yellow' : null;
   return { blocked, contact, foul, card, approachSpeed };
 }
+
+// Primary defender works around a shield; support stays goal-side to contain.
+// A blocked route is a positioning problem, not a reason to spam tackles.
+export function defensiveApproach(defender, carrier, ball, { goalX, primary = true } = {}) {
+  if (!primary) {
+    const dx = goalX - carrier.x, dz = -carrier.z, size = Math.hypot(dx, dz) || 1;
+    return { x: carrier.x + dx / size * 1.8, z: carrier.z + dz / size * 1.8 + (defender.z >= carrier.z ? .9 : -.9) };
+  }
+  if (!assessChallenge(defender, carrier, ball).blocked) return { x: ball.x, z: ball.z };
+  const dx = ball.x - carrier.x, dz = ball.z - carrier.z, size = Math.hypot(dx, dz) || 1;
+  const side = ((defender.x - carrier.x) * -dz + (defender.z - carrier.z) * dx) >= 0 ? 1 : -1;
+  return { x: carrier.x + dx / size * .35 - dz / size * side * 1.25,
+    z: carrier.z + dz / size * .35 + dx / size * side * 1.25 };
+}
+
+// Half the old playback speed: each animation/recovery takes twice as long.
+export const SLIDE_TIMING = Object.freeze({ animation: 1.1, contactWindow: .75,
+  missedRecovery: 4.8, groundHold: 2.6, getUp: 2.2 });

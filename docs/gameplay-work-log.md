@@ -194,3 +194,17 @@ All 73 unit tests, the existing phone/tablet/desktop camera browser check and
 production build pass. Netlify builds from GitHub main; direct Netlify access
 remains blocked by the session network proxy, so publishing must not be claimed
 as verified without a live result.
+
+## Defending, slide recovery and player appearance (2026-10-20)
+
+User reports repeated bot slides, momentarily disappearing players, unrealistically
+fast get-up, failed repeated tackles, and toy-like player appearance. Root causes
+and changes are recorded in [the defending/player review](defending-and-player-animation-review.md).
+CPU ordinary tackles now use an upright poke only in reach; primary defenders
+work around shields and supporting defenders contain. Get-up animation speed is
+halved, missed recovery doubles, and a successful slide must also get up. Same-
+action replay no longer fades to the bind pose. Restore the original model's
+texture/normal maps instead of discarding facial and clothing detail. Existing
+mesh geometry is retained. User wants Netlify retained for now; publishing remains
+authorized through main, but a Netlify live result cannot be verified directly
+from this environment.

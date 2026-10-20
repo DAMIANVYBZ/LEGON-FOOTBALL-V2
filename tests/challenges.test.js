@@ -24,3 +24,14 @@ test('a carrier running into a stationary defender does not create a tackle foul
  const v=assessChallenge({x:0,z:0,vx:0,vz:0},{x:.7,z:0,vx:-4,vz:0},{x:1.38,y:.11,z:0});
  assert.equal(v.foul,false);assert.equal(v.approachSpeed,0);
 });
+
+test('defenders contain or go around a shield before attempting an exposed ball', async()=>{
+ const { defensiveApproach }=await import('../src/challenges.js');
+ const carrier={x:0,z:0},ball={x:.68,y:.11,z:0};
+ const blocked=defensiveApproach({x:-1,z:0},carrier,ball,{goalX:35});
+ assert.ok(Math.abs(blocked.z)>1,'blocked tackler must work around the carrier');
+ const exposed=defensiveApproach({x:1.5,z:0},carrier,ball,{goalX:35});
+ assert.deepEqual(exposed,{x:.68,z:0});
+ const support=defensiveApproach({x:2,z:1},carrier,ball,{goalX:35,primary:false});
+ assert.ok(support.x>1.5&&support.z>.5,'support contains goal-side');
+});

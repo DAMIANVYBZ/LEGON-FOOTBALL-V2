@@ -62,16 +62,15 @@ export const KICK_SPIN = {
 // CPU behaviour per difficulty.
 // pace: CPU outfielders' speed. keeper: CPU keeper's reach. shot: CPU shot speed.
 // reaction: seconds between a CPU ball carrier's decisions. shotRange: how far
-// out the CPU will shoot (m). accuracy: CPU aiming error (m). foul: chance that
-// a CPU tackle from behind is a foul. teammateTackle: chance your AI teammates
-// win a tackle they attempt.
+// out the CPU will shoot (m). accuracy: CPU aiming error (m).
+// Tackles use reach and shielding geometry rather than a random success roll.
 export const DIFFICULTY = {
   Easy: { pace: 0.9, pressDistance: 18, tackleCooldown: 2, kickoffGrace: 3, keeper: 0.9, shot: 0.9,
-    reaction: 0.7, shotRange: 15, accuracy: 1.3, teammateTackle: 0.55 },
+    reaction: 0.7, shotRange: 15, accuracy: 1.3 },
   Medium: { pace: 0.97, pressDistance: 26, tackleCooldown: 1.4, kickoffGrace: 2, keeper: 1, shot: 1,
-    reaction: 0.5, shotRange: 18, accuracy: 0.85, teammateTackle: 0.45 },
+    reaction: 0.5, shotRange: 18, accuracy: 0.85 },
   Hard: { pace: 1.04, pressDistance: 34, tackleCooldown: 1, kickoffGrace: 1, keeper: 1.08, shot: 1.08,
-    reaction: 0.35, shotRange: 20, accuracy: 0.5, teammateTackle: 0.35 },
+    reaction: 0.35, shotRange: 20, accuracy: 0.5 },
 };
 
 // Stamina, from 1 (fresh) to 0: sprinting drains it, jogging and standing
