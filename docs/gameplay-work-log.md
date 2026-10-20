@@ -1,0 +1,174 @@
+# Gameplay work log
+
+## Working agreement
+
+Improve gameplay iteratively, using Google Research Football as a source
+reference where useful. Reproduce a concrete problem, make a focused change,
+and test the actual browser game. Do not claim parity with Google's gameplay;
+its native engine has not been run here. No Google code has been copied.
+
+Show gameplay evidence as inline screenshots when requested. The user cannot
+watch the supplied MP4 links. Describe controlled scenarios as controlled
+scenarios, not normal uninterrupted play. Changes remain local unless the user
+requests publishing/deployment and the necessary access is verified.
+
+## Completed: receiver approach and reception
+
+See [the receiving review](gameplay-receiving-review.md). Receivers brake on
+approach; home reception paths enforce consistent reach, height, speed and
+control-lock checks; away recipients use the same physical reception limits.
+The 52-test suite, build, full-match browser regression and desktop/phone
+production checks passed at that iteration.
+
+Actual browser comparison used a forward pass to a receiver initially at
+x=12 m, with receiving point x=14.5 m. Restoring only the old approach made the
+receiver reach x=15.40 m and receive at approximately 1.2 s. The fixed approach
+reached x=14.15 m and received at approximately 1.0 s. These are scenario-specific
+measurements, not a general performance guarantee.
+Screenshots and replay artifacts are in
+`/workspace/playtest-artifacts/receiving-demo/`; `comparison.png` shows the
+overshoot side by side. The user asked to retain this context and continue.
+
+## Next completed implementation: dribble body deflections
+
+The dribble loop overwrote Rapier's position and velocity after physical
+contact with an opponent. The ball remained attached to its carrier despite
+the obstruction. An isolated browser scenario put the home carrier at x=0,
+ball at x=0.68, and an opponent at x=0.95, temporarily inactive to isolate
+physical contact from the CPU tackle decision. Before the fix, possession
+remained with the carrier and the ball's velocity was repeatedly zeroed.
+
+Opponent contact now releases possession, preserves the physics response,
+records the opponent's last touch and applies a brief 0.12 s recovery lock to
+both teams. It does not automatically award the opponent possession or count
+the contact as a tackle. Teammate contacts and keeper-held balls do not trigger
+this dribble release rule.
+
+Physics also reports continuing solver contacts, since contact-start events
+alone cannot detect a ball still pressed against an opponent after control is
+regained. The browser scenario supports `downFor` on player fixtures to isolate
+physical obstruction without CPU movement or tackles; this API is dev-only.
+
+Regression coverage: `npm test` includes continuing-contact detection, and
+`python tools/smoke_physics.py` checks physical dribble release for both teams
+alongside passing and shooting. `python tools/smoke_match.py` checks the full
+match flow. Consult current command results before claiming later validation.
+
+## Completed: remove first-touch position snaps
+
+In a controlled browser scenario, a ball at x=-0.9 m travelling at 2 m/s was
+collected by a stationary home player at x=0. The old carry constraint moved it
+to x=0.5 m in one simulation step: a 1.4 m jump. The same path also forced a
+received ball below 0.85 m straight to ground height.
+
+New acquisitions now use a settling phase before normal dribble constraints.
+Horizontal positional correction is bounded at 6 m/s and vertical correction
+at 3 m/s; the physical movement that precedes correction still applies. The
+phase ends near the ordinary dribble point, rather than after a fixed timeout.
+It resets after loss of possession, keeper handling, restarts and match reset.
+The common carry path applies it to either team. Existing opponent-contact
+release still operates during settling.
+
+In the same browser scenario the first step moves from -0.9 m to -0.768 m
+(0.132 m including physical travel); at 0.5 s the ball is at x=0.665 m, close
+to the normal 0.68 m dribble point. Browser checks cover a ground ball from
+behind and a raised reception, asserting no large first-step horizontal or
+vertical snap and eventual settled possession. Unit coverage checks limits
+and convergence at 30, 60 and 120 Hz in both facing directions.
+
+Validation: 54 tests pass, production build succeeds, physics/passing browser
+checks and full-match browser checks pass with no JavaScript errors. The build
+retains its existing large-bundle warning. This is bounded positional control,
+not an implementation of Google's animation-timed trap or full first-touch
+physics; no native code was copied.
+
+Remaining candidates: timed dribble touches, momentum-based first-touch control,
+animation/contact synchronisation, player body separation and team tactics.
+
+## Broad rules and physics overhaul
+
+The user expanded the scope to all gameplay, specifically offsides/tracking,
+goals, chips and rebounding shots, with Google Research Football as the target
+reference. See [the full comparison and gap list](gameplay-rules-and-physics-audit.md).
+
+Implemented offside snapshots and involvement in both directions, restart
+exemptions, defensive-save/deflection phase preservation, indirect free kicks,
+restart double-touch restrictions, proper throw-in restart state, direct-goal
+restrictions, whole-ball goal geometry and prevention of goals from an already
+out-of-play ball. Chip aim now respects backward/sideways input. Grass bounce
+and rolling baselines use Google's reference values. Supporting AI stays behind
+the current offside line, and free carriers no longer recycle passes solely to
+unmarked players behind them. Recovering players cannot collect/kick/header the
+ball. One tackle impulse now uses the seeded match random source.
+
+Completed validation on the final implementation:
+
+- `npm test`: 67 passed, zero failures or skipped tests.
+- `npm run build`: succeeds; existing large-bundle warning remains.
+- `python tools/audit_rules.py`: 80 rule/physics groups across eight venues.
+- `python tools/audit_first_half.py`: 136 gameplay groups plus a fresh first
+  half to halftime at each of eight venues; finite motion/ball/stamina checks.
+- `python tools/audit_match_edges.py`: 88 boundary and phone-input groups
+  across eight venues.
+- `python tools/smoke_physics.py`: passing, first-touch settling, dribble body
+  deflections for either team, shot trajectories and crosses pass.
+- `python tools/smoke_match.py`: counterattack, both keepers, real keyboard
+  passing, crossing/heading, halftime, fulltime and one saved win pass.
+- Production `smoke_physics.py --production`: desktop and landscape phone
+  movement, multi-touch, pass/pause, version metadata and no debug API pass.
+- No JavaScript errors reported by the completed browser checks.
+
+The 304 browser audit groups comprise 80 + 136 + 88; this is not a count of
+304 independent matches. Most fixtures use deterministic accelerated steps.
+First-half runs use actual rendering and input decisions, not normal-speed
+human playtesting or physical-phone performance testing.
+
+Artifacts are under `/workspace/playtest-artifacts/rules-audit/`,
+`full-gameplay-audit/` and `edge-audit/`. The gameplay audit contains actual
+kickoff, live-play and halftime screenshots. Changes remain local and have not
+been committed, pushed or deployed.
+
+Remaining substantial gaps: full player body separation, animation-timed
+physical touches, native-matched aerodynamic/solver trajectories, complete
+keeper handling rules, physical end changes at halftime, advanced team tactics
+and complete referee/competition rules. Do not describe this as complete Google
+Research Football parity. Continue with these recorded gaps on future iterations.
+
+## Fouls, restart taking and cameras
+
+User prioritised camera movement/placement and complained of too many simple
+fouls. See [the detailed review](fouls-restarts-camera-review.md).
+
+Reproduced 17 random fouls in 40 clean standing-poke fixtures; changed judgments
+to ball-route/contact/approach-speed checks. The same fixtures now have zero
+fouls, while a separate reckless body-first slide still earns a foul and red.
+CPU pokes jockey when the ball is shielded instead of rolling simple fouls.
+
+Fixed clipped and stale restart-camera poses, fitted taker/ball/target views,
+removed the delayed hard cut after delivery, eased phone zoom and added high-ball
+look height. Goal kicks, throw-ins and indirect/long free kicks also get proper
+restart framing. Default phone controls stay clear; the radar hides in this view.
+Visual inspection caught a second issue: far-side animated takers disappeared
+while their selection marker remained visible. Disabling frustum culling for
+player skinned meshes fixed actual Astroturf/stadium screenshots; scenery culling
+remains enabled.
+
+Short restart passes no longer use the airborne solver (an old fixture had
+12.33 m/s upward speed). They target teammates, roll on the surface and use a
+matching run-up/ground preview. Goal kicks now share aim/charge/run-up controls.
+Penalties wait for readiness; a passed penalty is tapped forward. Both teams
+have a short option offered at restarts.
+
+Validation: 72 unit tests; 72 camera-framing cases across all three camera modes,
+both teams and desktop/phone; sixteen foul/restart behaviour groups; four release
+transition replays; eight consecutive-corner checks without resetting the match;
+phone magnification/touchline/paused-rendering checks; Sarbah's seventeen gameplay
+groups and first half; all-venue rules regression; full-match flow and production
+desktop/phone control checks. Build passes with the pre-existing large-bundle
+warning. All-venue camera captures include image-based corner-taker visibility
+checks. Refer to the completed machine reports for run details.
+
+Artifacts: `/workspace/playtest-artifacts/fouls-camera-audit/` and
+`/workspace/playtest-artifacts/camera-venues/`. Prefer inline screenshot evidence;
+the user cannot watch supplied MP4 links. Software-rendered browser evidence is
+not a physical-device frame-rate benchmark. Changes remain local, not deployed.

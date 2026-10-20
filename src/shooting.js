@@ -56,6 +56,15 @@ export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power =
   return { x, z, height, speed, assisted, distance };
 }
 
+// Use the same assist cone as other shots: a chip aimed away from goal must
+// keep that bearing rather than being forced back between the posts.
+export function aimChip(options) {
+  const aimed = aimShot({ ...options, style: 'low' });
+  const power = clamp(options.power ?? 0.5, 0, 1);
+  return { ...aimed, height: 1.5 + power * 0.35,
+    speed: clamp(Math.hypot(aimed.x - options.ball.x, aimed.z - options.ball.z) * (0.5 + power * 0.15), 9, 21) };
+}
+
 // Set-piece spin from the right stick, drawn during the run-up. The stick's
 // path is kept as a list of zones it passed through: U, D, L, R.
 export function stickZone(x, z) {

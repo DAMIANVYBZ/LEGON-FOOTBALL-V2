@@ -11,6 +11,22 @@ npm run dev
 
 `npm run build` produces the static `dist/` folder.
 
+## Gameplay rules and reference audit
+
+Offside is tracked at a teammate's touch and penalised when an offside player
+plays the ball, challenges an opponent or screens the keeper in the modelled
+shot path. Direct corners, goal kicks and throw-ins are exempt. Woodwork,
+deflections and defensive saves preserve the attacking phase. Offside awards
+an indirect free kick; it cannot score directly without another player touch.
+Throw-ins now wait for a taker, and restart double touches are penalised.
+
+Goals require a full valid crossing between the posts and below the bar. Chips
+respect manual aim. The grass bounce and rolling baselines reference Google
+Research Football, while the browser engine, seven-a-side tactics and animation
+system remain distinct. See the [gameplay audit and remaining differences](docs/gameplay-rules-and-physics-audit.md)
+and [ongoing work log](docs/gameplay-work-log.md). Run `python tools/audit_rules.py`
+against the development server for the all-venue rules regression.
+
 ## Campus arrival integration
 
 The parent game detects arrival/proximity at a field, then opens this football window with one of these venue IDs: `sarbah`, `gonja`, `nania-main`, `nania-north`, `nania-east`, `astro`, `oval`, `ug-stadium`. The football window shows a Yes/Not Now prompt. Yes opens match setup at that field, where the player chooses hall teams, difficulty, match length and formation, then kicks off. The device (touch or keyboard) is detected automatically and can be changed before kickoff. The venue is fixed by the arrival point. **Quick Match** on the landing page and main menu replays the last settings used on this device.
@@ -86,19 +102,19 @@ Controllers (PlayStation, Xbox and generic pads) use the EA FC classic layout. T
 
 Shots are assisted: while you shoot roughly toward goal, the stick picks a spot inside the goal mouth (src/shooting.js). Turn the stick well away and the shot goes where it points. Error grows with power past three quarters of the bar and with distance, and the keeper needs a moment to read each strike, so shots into the corners score more often than shots at him, and nothing is certain either way. A cross met at head height in the box is headed at goal.
 
-Set pieces. Free kicks within 30 m use a low camera over the taker's shoulder; corners use a low camera beside the taker looking into the box; goal kicks and long free kicks stay in the match camera. At a corner or free kick a dotted line shows where the ball will fly, how high and where it lands, updating as you aim and charge:
+Set pieces. Restart cameras frame the taker, ball and target together, including the goal mouth for close attacking restarts. Each new restart gets its own view; the camera eases back into play after delivery. On phones the radar is hidden during restarts so it cannot cover the ball. At corners, free kicks and goal kicks, a dotted line updates as you aim and charge:
 
 - Left stick moves the reticle (on the goal for a free kick in range, on the pitch for a cross).
 - Hold ▢ (shot), ◯ (cross or lofted) or ✕ (short pass) to set the power. Two to three and a half bars of five suits most free kicks; more sends it over.
 - During the run-up, the right stick adds spin: down then up dips the ball, a half circle curls it, down-up-down is a knuckleball.
 - Tap ▢ again right as the foot meets the ball for timed finishing (GREEN TIMING is most accurate).
-- A free kick in range has a two-man wall. Goal kicks with ◯ are always lofted: more power goes higher and further.
+- A free kick in range has a two-man wall. Goal kicks use the same aim/charge/run-up controls: move the target to choose range, use ✕ for a ground pass or ◯ for a lofted delivery; more power delivers it faster. Short passes stay on the ground and target a teammate rather than the goal.
 
-Penalties: a foul inside the 18-yard box gives a penalty from the spot instead of a free kick. Everyone else waits outside the box and the keeper stands on his line. Taking one, you aim and strike exactly as at a free kick (reticle, power, spin, timed finishing); the computer keeper has to guess a side as the ball is struck. Facing one, you are the keeper: hold the stick left or right to dive that way at the kick, or leave it to stay central.
+Penalties: a foul inside the 18-yard box gives a penalty from the spot instead of a free kick. Everyone else waits outside the box and the keeper stands on his line. Taking one, you aim and strike exactly as at a free kick (reticle, power, spin, timed finishing); the computer keeper has to guess a side as the ball is struck. The run-up waits until the penalty is ready; a passed penalty is tapped forward. Facing one, you are the keeper: hold the stick left or right to dive that way at the kick, or leave it to stay central.
 
 Goals and woodwork: after a goal the ball carries on into the net, which bulges where it strikes and ripples out. A shot off the post or bar makes the frame shudder with a metallic ring. You also feel these moments: a controller rumbles (Chrome and Edge drive DualSense, DualShock, Xbox and most pads; Firefox where supported), an Android phone vibrates, and on every device the camera gives a short shake, so iPhone and keyboard players feel it too. Vibration can be switched off in Settings › HUD (src/haptics.js).
 
-Cards: a slide tackle from behind is almost always a red card, a hard tackle from behind often a yellow; a second yellow is a red, and a sent-off player takes no further part.
+Fouls and cards: a clean ball-first tackle is legal even from behind. Body-first challenges are judged using contact, the route to the ball and approach speed; a reckless slide can warrant a red. CPU standing tackles jockey when the ball is shielded. A second yellow is a red, and a sent-off player takes no further part.
 
 ## Remaining work
 

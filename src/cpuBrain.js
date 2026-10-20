@@ -61,8 +61,11 @@ export function decideCarrier({ carrier, teammates, opponents, keeper, goal, fie
     }
   }
 
-  const option = bestPassOption(carrier, teammates, opponents, goal);
   const pressed = nearest < 2.6;
+  // When free to advance, do not recycle sideways/backward solely because a
+  // teammate is unmarked. Under pressure the safe outlet remains available.
+  const options = pressed ? teammates : teammates.filter(m => (m.x - carrier.x) * attack > 2);
+  const option = bestPassOption(carrier, options, opponents, goal);
   if (option && (pressed ? option.score > 0.6 : option.score > 2.2 && random() < 0.35)) {
     const mate = teammates.find(m => m.index === option.index);
     // Play it into the runner's path when they are moving towards goal.

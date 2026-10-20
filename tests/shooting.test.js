@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aimShot, spinStyle, stickZone } from '../src/shooting.js';
+import { aimShot, aimChip, spinStyle, stickZone } from '../src/shooting.js';
 import { flight, liftFor } from '../src/ballistics.js';
 import { createRandom } from '../src/keeper.js';
 
@@ -67,4 +67,15 @@ test('right-stick gestures pick the set-piece spin', () => {
   assert.equal(spinStyle(['L', 'D', 'R']), 'curlRight');
   assert.equal(spinStyle(['R', 'U', 'L']), 'curlLeft');
   assert.equal(spinStyle([]), 'none');
+});
+
+
+test('chip shots keep backward and sideways aim outside the assist cone', () => {
+  for (const direction of [{x:-1,z:0},{x:0,z:1},{x:0,z:-1}]) {
+    const ball={x:10,z:0};
+    const chip=aimChip({ball,direction,...goal,power:.5,random:()=>.5});
+    assert.equal(chip.assisted,false);
+    assert.ok((chip.x-ball.x)*direction.x+(chip.z-ball.z)*direction.z>10);
+    assert.ok(chip.height>1 && chip.speed>=9);
+  }
 });

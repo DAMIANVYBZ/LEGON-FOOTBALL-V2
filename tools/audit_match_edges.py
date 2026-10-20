@@ -62,7 +62,7 @@ EVENTS = r'''spec => {
   });
   check('diagonal touchline exit does not also award a corner',()=>{
     fresh({ball:[G-.1,.6,W-.05],velocity:[15,0,20]});d.step(1/60);
-    const s=d.snapshot();expect(!s.restart&&!s.lastTouchHome,'Double restart after touchline crossing');
+    const s=d.snapshot();expect(s.restart?.type==='throwIn'&&!s.restart.home,'Wrong restart after touchline crossing');
     expect(s.ball[0]<=G,'Throw-in was placed beyond the end line');
   });
   check('opponent keeper selects his own teammate regardless of human aim',()=>{

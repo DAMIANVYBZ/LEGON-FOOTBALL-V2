@@ -73,6 +73,14 @@ async def main():
                             report[device]['touchline'+str(z)] = await page.evaluate('window.__footballDebug.camera()')
                         await page.evaluate("window.__footballDebug.restart('freeKick',true,{x:15,z:0});window.__footballDebug.step(.05)")
                         await frames(page)
+                        # Restart framing now eases the phone lens instead of
+                        # changing zoom instantly; verify the actual settled view.
+                        initial_zoom=await page.evaluate('window.__footballDebug.camera().zoom')
+                        assert 1 <= initial_zoom <= 1.25
+                        await page.get_by_role('button', name='RESUME').click()
+                        await page.wait_for_function('window.__footballDebug.camera().zoom===1',timeout=10000)
+                        await page.keyboard.press('Escape')
+                        await frames(page)
                         report[device]['setPiece'] = await page.evaluate('window.__footballDebug.camera()')
                 finally:
                     await context.close()

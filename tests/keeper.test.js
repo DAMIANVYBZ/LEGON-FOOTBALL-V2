@@ -80,3 +80,12 @@ test('teams are unique, grouped in three, and clashing kits get a change strip',
   assert.equal(matchKits('Akuafo', 'Pent Hostel (African Union)').away, '#f1f1ec');
   assert.equal(teamShort('Evandy Hostel (United Nations)'), 'Evandy');
 });
+
+
+test('an unpressed CPU advances instead of recycling to a free teammate behind',()=>{
+ const state={carrier:{index:9,x:0,z:0,vx:-3,vz:0},teammates:[{index:10,x:12,z:4,vx:0,vz:0}],opponents:[],
+  keeper:{x:-34,z:0},goal:{x:-35.5,width:7.32},field:{length:71,width:45},skill:{range:18,accuracy:.8},random:()=>.1};
+ assert.equal(decideCarrier(state).type,'dribble');
+ const pressured=decideCarrier({...state,opponents:[{index:5,x:-1.5,z:1}]});
+ assert.equal(pressured.type,'pass','a safe backward outlet is still available under pressure');
+});

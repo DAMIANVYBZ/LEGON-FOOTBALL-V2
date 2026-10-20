@@ -19,7 +19,10 @@ export const BALL = {
   liftPerSpin: 0.8, maxLift: 0.3,
   airSpinDecay: 0.05, // per second while airborne
   inertia: 2 / 3, // I / (mass * radius^2): a football is a thin shell
-  restitution: 0.36,
+  // Google Research Football ball.cpp uses 0.62 restitution and subtracts
+  // 0.06 m/s after impact. Surfaces below vary around this grass baseline.
+  restitution: 0.62,
+  bounceLoss: 0.06,
 };
 
 // Each campus surface plays differently: astroturf is fast and true, red earth
@@ -29,11 +32,11 @@ export const BALL = {
 // bounceGrip: share of the horizontal speed kept when the ball lands.
 // bounceScatter: maximum change of direction on a bounce, in radians.
 export const SURFACES = {
-  grass: { restitution: 0.28, rolling: 1.2, sliding: 0.35, bounceGrip: 0.88, bounceScatter: 0 },
-  worn: { restitution: 0.31, rolling: 1.45, sliding: 0.38, bounceGrip: 0.86, bounceScatter: 0.06 },
-  mixed: { restitution: 0.33, rolling: 1.55, sliding: 0.4, bounceGrip: 0.85, bounceScatter: 0.1 },
-  soil: { restitution: 0.38, rolling: 1.8, sliding: 0.45, bounceGrip: 0.82, bounceScatter: 0.16 },
-  astro: { restitution: 0.4, rolling: 0.9, sliding: 0.3, bounceGrip: 0.92, bounceScatter: 0 },
+  grass: { restitution: BALL.restitution, rolling: 1.6, sliding: 0.35, bounceGrip: 0.88, bounceScatter: 0 },
+  worn: { restitution: 0.64, rolling: 1.8, sliding: 0.38, bounceGrip: 0.86, bounceScatter: 0.06 },
+  mixed: { restitution: 0.65, rolling: 1.9, sliding: 0.4, bounceGrip: 0.85, bounceScatter: 0.1 },
+  soil: { restitution: 0.68, rolling: 2.1, sliding: 0.45, bounceGrip: 0.82, bounceScatter: 0.16 },
+  astro: { restitution: 0.66, rolling: 1.2, sliding: 0.3, bounceGrip: 0.92, bounceScatter: 0 },
 };
 export const surfaceFor = name => SURFACES[name] || SURFACES.grass;
 
@@ -64,11 +67,11 @@ export const KICK_SPIN = {
 // win a tackle they attempt.
 export const DIFFICULTY = {
   Easy: { pace: 0.9, pressDistance: 18, tackleCooldown: 2, kickoffGrace: 3, keeper: 0.9, shot: 0.9,
-    reaction: 0.7, shotRange: 15, accuracy: 1.3, foul: 0.7, teammateTackle: 0.55 },
+    reaction: 0.7, shotRange: 15, accuracy: 1.3, teammateTackle: 0.55 },
   Medium: { pace: 0.97, pressDistance: 26, tackleCooldown: 1.4, kickoffGrace: 2, keeper: 1, shot: 1,
-    reaction: 0.5, shotRange: 18, accuracy: 0.85, foul: 0.55, teammateTackle: 0.45 },
+    reaction: 0.5, shotRange: 18, accuracy: 0.85, teammateTackle: 0.45 },
   Hard: { pace: 1.04, pressDistance: 34, tackleCooldown: 1, kickoffGrace: 1, keeper: 1.08, shot: 1.08,
-    reaction: 0.35, shotRange: 20, accuracy: 0.5, foul: 0.45, teammateTackle: 0.35 },
+    reaction: 0.35, shotRange: 20, accuracy: 0.5, teammateTackle: 0.35 },
 };
 
 // Stamina, from 1 (fresh) to 0: sprinting drains it, jogging and standing

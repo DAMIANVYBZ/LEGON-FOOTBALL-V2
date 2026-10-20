@@ -43,6 +43,50 @@ async def development_checks(page):
         {index:5,x:0,z:0},{index:6,x:15,z:0},{index:4,x:15,z:5},{index:10,x:7,z:0}]});
       d.aim({x:1,z:0}); d.press('j'); d.release('j'); d.aim(null);
       if (d.snapshot().passTarget !== 4) throw Error('Pass assistance ignored the blocked lane');
+      // A receiver must approach and control short, medium and longer passes.
+      // Run the real movement, ball physics and possession-transfer loop.
+      const receptions=[];
+      for (const distance of [5, 12, 24]) {
+        d.scenario({ball:[.68,.11,0],owner:5,players:[...players,
+          {index:5,x:0,z:0},{index:6,x:distance,z:0}]});
+        d.aim({x:1,z:0}); d.press('j'); d.release('j'); d.aim(null);
+        if(d.snapshot().passTarget!==6) throw Error('Wrong receiver at '+distance+'m');
+        let state=d.snapshot();
+        for(let i=0;i<240 && state.possessor!==6;i++) {d.step(1/60);state=d.snapshot();}
+        if(state.possessor!==6 || state.controlled!==6)
+          throw Error('Pass not controlled at '+distance+'m: '+JSON.stringify(state));
+        receptions.push(distance);
+      }
+      // Isolate a body deflection from the CPU's tackle decision. A temporarily
+      // inactive opponent still has a physical collider, as during recovery.
+      const deflections=[];
+      for(const home of [true,false]) {
+        const sign=home?1:-1,owner=home?5:12,blocker=home?10:4;
+        d.scenario({ball:[sign*.68,.11,0],owner,players:[...players,
+          {index:owner,x:0,z:0},{index:blocker,x:sign*.95,z:0,downFor:3}]});
+        const before=d.snapshot().events.dribbleDeflections||0;
+        d.step(.1);const s=d.snapshot();
+        if(s.possessor>=0 || s.awayCarrier>=0 || s.lastTouchHome!==!home
+          || (s.events.dribbleDeflections||0)!==before+1)
+          throw Error('Body contact did not break dribble: '+JSON.stringify({home,state:s}));
+        deflections.push(home?'home carrier':'away carrier');
+      }
+      // A ball just behind a player used to jump 1.4 m to their front in one
+      // frame. Also check the vertical snap when an AI teammate receives it.
+      const firstTouches=[];
+      for(const raised of [false,true]) {
+        const receiver=raised?6:5,height=raised?.75:.11;
+        d.scenario({ball:[-.9,height,0],velocity:[2,0,0],players:[...players,
+          {index:receiver,x:0,z:0}]});
+        const initial=d.snapshot();d.step(1/60);const first=d.snapshot();
+        const horizontal=Math.hypot(first.ball[0]-initial.ball[0],first.ball[2]-initial.ball[2]);
+        if(first.possessor!==receiver || horizontal>.2 || initial.ball[1]-first.ball[1]>.09)
+          throw Error('First touch snapped ball: '+JSON.stringify({raised,initial:initial.ball,first:first.ball,owner:first.possessor}));
+        d.step(.6);const settled=d.snapshot(),player=settled.players[receiver];
+        if(settled.possessor!==receiver || Math.hypot(settled.ball[0]-player.x,settled.ball[2]-player.z)>1.1 || settled.ball[1]>.15)
+          throw Error('First touch failed to settle: '+JSON.stringify({raised,state:settled}));
+        firstTouches.push(raised?'raised reception':'ball from behind');
+      }
       // Measure the actual simulated flight, with both keepers out of its path.
       d.scenario({ball:[-18.68,.11,4],owner:12,players:[...players,{index:12,x:-18,z:4}]});
       d.cpuKick(12,'shoot',{x:-35.5,z:1,high:true});
@@ -55,7 +99,7 @@ async def development_checks(page):
       d.cpuKick(12,'cross',13);
       const cross=d.snapshot();
       if (cross.velocity[1]<3) throw Error('CPU cross was not lofted');
-      return {shotAtGoal:shot.ball,crossVelocity:cross.velocity};
+      return {receptions,deflections,firstTouches,shotAtGoal:shot.ball,crossVelocity:cross.velocity};
     }''')
     print('PASS: manual shot bearings, defender-aware passing, CPU shot height and lofted cross', result, flush=True)
 

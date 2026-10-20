@@ -55,7 +55,7 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
   const ballCollider = world.createCollider(RAPIER.ColliderDesc.ball(ballRadius).setMass(BALL.mass)
     .setFriction(0).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
     .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
-    .setRestitution(BALL.restitution), body);
+    .setRestitution(surface.restitution), body);
   const players = playerPositions.map(position => {
     const player = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()
       .setTranslation(position.x, 0.85, position.z));
@@ -119,6 +119,7 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
     if (before > -1.2) return;
     const v = body.linvel();
     if (v.y < 0.3 || body.translation().y > ballRadius + 0.08) return;
+    v.y = Math.max(0, v.y - BALL.bounceLoss);
     const angle = (scatter() * 2 - 1) * surface.bounceScatter;
     const cos = Math.cos(angle) * surface.bounceGrip, sin = Math.sin(angle) * surface.bounceGrip;
     const x = v.x, z = v.z;
@@ -164,6 +165,15 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
           const index = playerByCollider.get(other);
           // Carrying uses a sensor: proximity to the owner is not a deflection.
           if (index !== undefined && !players[index].collider.isSensor()) lastTouch = index;
+        });
+        // A dribbler can regain control while still touching a defender.
+        // Contact-start events alone miss that continuing obstruction.
+        world.contactPairsWith(ballCollider, other => {
+          const index = playerByCollider.get(other.handle);
+          if (index === undefined || other.isSensor()) return;
+          world.contactPair(ballCollider, other, manifold => {
+            if (manifold.numSolverContacts() > 0) lastTouch = index;
+          });
         });
         landing(before);
         integrateRotation(world.timestep);

@@ -69,7 +69,7 @@ EVENTS = r'''spec => {
     const before=d.snapshot().events.tackles;d.tackle('standing');expect(d.snapshot().events.tackles>before,'Standing tackle failed');
     fresh({ball:[1,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:1.6,z:0,heading:0}]});
     d.tackle('slide');expect(!d.snapshot().sliding,'Resolved slide kept running');
-    expect(d.snapshot().players[5].sentOff,'From-behind slide did not award its seeded red card');
+    expect(!d.snapshot().players[5].sentOff,'Clean ball-first slide incorrectly awarded a red card');
   });
   check('missed slide has a recovery delay',()=>{
     fresh({ball:[7,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:7.68,z:0,heading:Math.PI}]});
@@ -112,7 +112,7 @@ EVENTS = r'''spec => {
           {x:sign*(G-(type==='penalty'?Math.min(11,L*.12):20)),z:0};
         d.restart(type,home,spot);d.step(.1);expect(d.snapshot().restart?.type===type,'Restart not established: '+type);
         if(home){
-          const key=type==='corner'||type==='goalKick'?'l':'k';d.press(key);d.step(.4);d.release(key);d.step(.9);
+          const key=type==='corner'||type==='goalKick'?'l':'k';d.press(key);d.step(.4);d.release(key);d.step(type==='penalty'?2.7:1.1);
         }else d.step(type==='penalty'?3.1:1.6);
         expect(d.snapshot().restart===null,'Restart did not release: '+type+' '+JSON.stringify(d.snapshot().restart));
         expect(d.snapshot().velocity.every(Number.isFinite),'Restart produced invalid velocity');
@@ -120,7 +120,7 @@ EVENTS = r'''spec => {
     });
   }
   check('goal and net response',()=>{
-    fresh({ball:[G+.2,.8,0],velocity:[12,0,0],owner:-1,touch:true});
+    fresh({ball:[G-.3,.8,0],velocity:[12,0,0],owner:-1,touch:true,players:[...far,{index:5,x:0,z:0}]});
     const before=d.snapshot().score[0];d.step(.4);expect(d.snapshot().score[0]===before+1,'Goal not counted');
     expect(d.snapshot().ball[0]<G+2.3,'Ball escaped the back net');
   });

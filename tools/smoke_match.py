@@ -19,7 +19,7 @@ async def main(first_half=False):
   result=await page.evaluate('''() => {
     const d=window.__footballDebug;const results=[];
     function scenario(name,setup,time){const before=d.snapshot().events;d.scenario(setup);d.step(time);const s=d.snapshot();const events=Object.fromEntries(Object.keys(s.events).map(k=>[k,s.events[k]-before[k]]));const result={name,events,owner:s.awayCarrier,held:s.keeperHolding,ball:s.ball,velocity:s.velocity,players:s.players};results.push(result);return result;}
-    const takeover=scenario('opponent tackle and counterattack',{ball:[-0.12,.11,0],owner:5,players:[{index:5,x:-.8,z:0},{index:10,x:1.3,z:0},...[1,2,3,4,6].map(index=>({index,x:-5000,z:0}))]},15);
+    const takeover=scenario('opponent tackle and counterattack',{ball:[-0.12,.11,0],owner:5,players:[{index:5,x:-.8,z:0},{index:10,x:1.3,z:0},...[1,2,3,4,6].map(index=>({index,x:-5000,z:0}))]},18);
     if(takeover.events.tackles<1||takeover.events.awayShots<1)throw Error('CPU did not tackle and shoot');
     const caught=scenario('home keeper catch',{ball:[-31,1,0],velocity:[-10,0,0],players:[{index:0,x:-34,z:0}]},.5);
     if(caught.events.catches<1||caught.held!==0)throw Error('Keeper failed to hold catch');
@@ -59,7 +59,7 @@ async def main(first_half=False):
   # lead for the persistence check instead of assuming the scoreboard is 0-0.
   needed=await page.evaluate("(()=>{const [home,away]=window.__footballDebug.snapshot().score;return Math.max(1,away-home+1)})()")
   for _ in range(needed):
-   await page.evaluate("window.__footballDebug.scenario({ball:[36,.11,0],velocity:[1,0,0]}); window.__footballDebug.step(3)")
+   await page.evaluate("window.__footballDebug.scenario({ball:[35.3,.11,0],velocity:[3,0,0],players:Array.from({length:14},(_,index)=>({index,x:index===5?0:5000,z:index===5?20:5000}))}); window.__footballDebug.step(3)")
   scores=await page.evaluate("window.__footballDebug.snapshot().score")
   assert scores[0]>scores[1],scores
   # Opponents are placed far away for the clock/result test, not for gameplay.

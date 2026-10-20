@@ -55,14 +55,29 @@ export function advancePlayer(state, input, dt, { sprint = false, dribbling = fa
   return speed;
 }
 
-export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0 } = {}) {
+// Arrive at a receiving point instead of sprinting through it and turning
+// back. Leave a margin below the movement model's braking acceleration.
+export function receivingInput(delta, maxSpeed) {
+  const distance = Math.hypot(delta.x, delta.z);
+  if (distance < 0.08 || maxSpeed <= 0) return { x: 0, z: 0 };
+  const speed = Math.min(maxSpeed, Math.sqrt(2 * 10 * distance), distance * 4);
+  const scale = speed / (maxSpeed * distance);
+  return { x: delta.x * scale, z: delta.z * scale };
+}
+
+export function canReceivePass(player, ball, velocity) {
+  return Math.hypot(player.x - ball.x, player.z - ball.z) < 1.1
+    && ball.y < 0.85 && Math.hypot(velocity.x, velocity.y, velocity.z) < 15;
+}
+
+export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0, offsideLine } = {}) {
   const attackSign = home ? 1 : -1;
   const forward = attacking ? (run ? 11 : 5) : -3;
   const crossing = attacking && Math.abs(ball.z) > field.width * 0.27 && attackSign * ball.x > field.length * 0.08;
   const attackingRole = role >= 5;
   const boxRunX = attackSign * (field.length / 2 - (role % 2 ? 8 : 13));
   const boxRunZ = role % 2 ? 0 : Math.sign(ball.z) * Math.min(7, field.width * 0.13);
-  return {
+  const target = {
     x: clamp(crossing && attackingRole ? boxRunX : attacking && run
       ? ball.x + attackSign * (attackingRole ? 13 : 7)
       : spawn[0] + ball.x * (attacking ? 0.48 : 0.3) + attackSign * forward,
@@ -70,10 +85,25 @@ export function supportPosition(spawn, ball, field, { home, attacking, run = fal
     z: clamp(crossing && attackingRole ? boxRunZ : spawn[1] + ball.z * (attacking ? 0.2 : 0.14) + lane * (attacking ? 2 : 1),
       -field.width / 2 + 2, field.width / 2 - 2),
   };
+  if (attacking && Number.isFinite(offsideLine)) target.x = attackSign * Math.min(target.x * attackSign, offsideLine * attackSign - 0.35);
+  return target;
 }
 
-// The owner does not collide with their own dribble. A turn must never leave
-// the controlled ball behind their heels, even at a low rendering frame rate.
+// On acquisition, approach the dribble point without applying the ahead-of-feet
+// constraint: that constraint can teleport a ball received from behind.
+export function settleFirstTouch(ball, player, dt, sprint = false) {
+  const forward = forwardFromHeading(player.heading), lead = sprint ? 0.86 : 0.68;
+  const targetX = player.x + forward.x * lead, targetZ = player.z + forward.z * lead;
+  const dx = targetX - ball.x, dz = targetZ - ball.z, distance = Math.hypot(dx, dz);
+  const correction = Math.min(distance * (1 - Math.exp(-24 * dt)), 6 * dt);
+  const scale = distance > 0 ? correction / distance : 0;
+  const x = ball.x + dx * scale, z = ball.z + dz * scale;
+  const y = ball.y + clamp(0.11 - ball.y, -3 * dt, 3 * dt);
+  return { x, y, z, settled: Math.hypot(targetX - x, targetZ - z) < 0.08 && Math.abs(y - 0.11) < 0.01 };
+}
+
+// The owner does not collide with their own dribble. Once settled, a turn must
+// not leave the controlled ball behind their heels.
 export function carryBall(ball, player, dt, sprint = false) {
   const forward = forwardFromHeading(player.heading);
   const lead = sprint ? 0.86 : 0.68;

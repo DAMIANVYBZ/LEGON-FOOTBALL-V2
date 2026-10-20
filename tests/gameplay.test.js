@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advancePlayer, carryBall, canWinTackle, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
+import { advancePlayer, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
 import { createMatchPhysics } from '../src/matchPhysics.js';
 
 test('play continues until the whole ball crosses either pitch boundary', () => {
@@ -37,6 +37,44 @@ test('a player accelerates and comes to a stop without instant direction changes
   assert.ok(player.vx > 0 && player.vx < running);
   for (let i = 0; i < 40; i++) advancePlayer(player, { x: 0, z: 0 }, 1 / 60);
   assert.ok(Math.abs(player.vx) < 0.01);
+});
+
+test('a sprinting receiver brakes at the receiving point at different simulation rates', () => {
+  for (const hz of [30, 60, 120]) {
+    const player = { x: 0, z: 0, vx: 8.1, vz: 0, heading: 0 };
+    let furthest = 0;
+    for (let i = 0; i < hz * 2; i++) {
+      advancePlayer(player, receivingInput({ x: 3 - player.x, z: -player.z }, 8.1), 1 / hz, { sprint: true });
+      furthest = Math.max(furthest, player.x);
+    }
+    assert.ok(Math.abs(player.x - 3) < 0.12, `receiver stopped at ${player.x} (${hz} Hz)`);
+    assert.ok(furthest < 3.15, `receiver overshot to ${furthest}`);
+    assert.ok(Math.abs(player.vx) < 0.05);
+  }
+});
+
+test('pass control requires a reachable ball with controllable height and speed', () => {
+  const player = { x: 0, z: 0 }, ball = { x: 0.7, y: 0.11, z: 0 };
+  assert.equal(canReceivePass(player, ball, { x: 10, y: 0, z: 0 }), true);
+  assert.equal(canReceivePass(player, ball, { x: 24, y: 0, z: 0 }), false, 'a driven shot is not an automatic trap');
+  assert.equal(canReceivePass(player, { ...ball, y: 1.2 }, { x: 3, y: -2, z: 0 }), false);
+  assert.equal(canReceivePass(player, { ...ball, x: 1.5 }, { x: 3, y: 0, z: 0 }), false);
+});
+
+test('first touches from behind and above settle without teleporting at different rates', () => {
+  for (const hz of [30, 60, 120]) for (const heading of [0, Math.PI]) {
+    const player = { x: 0, z: 0, heading }, sign = Math.cos(heading);
+    let ball = { x: -0.9 * sign, y: 0.8, z: 0 }, settled = false;
+    for (let i = 0; i < hz; i++) {
+      const next = settleFirstTouch(ball, player, 1 / hz);
+      assert.ok(Math.hypot(next.x - ball.x, next.z - ball.z) <= 6 / hz + 1e-9);
+      assert.ok(Math.abs(next.y - ball.y) <= 3 / hz + 1e-9);
+      ball = next; settled ||= next.settled;
+    }
+    assert.ok(settled);
+    assert.ok(Math.abs(ball.x - 0.68 * sign) < 0.01);
+    assert.ok(Math.abs(ball.y - 0.11) < 0.001);
+  }
 });
 
 test('players and keepers face upfield, with the ball ahead of their feet', () => {
@@ -107,6 +145,22 @@ test('a fast ball hits a player instead of passing through their legs', async ()
   assert.ok(velocity.x < 0);
   assert.ok(touches.includes(0), 'the deflecting player is reported for corners and throw-ins');
   simulation.free();
+});
+
+test('continued opponent contact remains detectable while the carrier is a sensor', async () => {
+  const players = [{ x: 0, z: 0 }, { x: 0.95, z: 0 }];
+  const simulation = await createMatchPhysics({ length: 95, width: 60, goalWidth: 7.32,
+    goalHeight: 2.44, playerPositions: players });
+  try {
+    const ball = { x: 0.68, y: 0.11, z: 0 }, velocity = { x: 0, y: 0, z: 0 };
+    simulation.reset(ball, velocity);
+    const touches = [];
+    // Reproduce the old carry loop continually pulling a ball into a defender.
+    // A contact-start-only implementation reports the first touch and loses
+    // the obstruction on subsequent steps.
+    for (let i = 0; i < 12; i++) touches.push(simulation.step(1 / 60, ball, velocity, players, 0).lastTouch);
+    assert.ok(touches.slice(-5).every(index => index === 1), `lost continuing contact: ${touches}`);
+  } finally { simulation.free(); }
 });
 
 test('dribbling stays ahead through a full turn and does not hit the owner collider', async () => {
@@ -198,4 +252,26 @@ test('the net stops a goal and the round post sends the ball back out', async ()
   assert.ok(Math.hypot(netted.velocity.x, netted.velocity.z) < 1);
   const post = await flight({}, { x: 45, y: 1, z: 3.72 }, { x: 20, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 0.5);
   assert.ok(post.velocity.x < 0 && post.velocity.z > 0, JSON.stringify(post.velocity));
+});
+
+
+test('grass drop rebounds near the Google reference coefficient', async () => {
+ const simulation=await createMatchPhysics({length:71,width:45,goalWidth:7.32,goalHeight:2.44,surface:'grass'});
+ let p={x:0,y:2,z:0},v={x:0,y:0,z:0},ratio=null;
+ try {
+  simulation.reset(p,v);
+  for(let i=0;i<120;i++) {
+   const incoming=v.y,next=simulation.step(1/60,p,v);p={...next.position};v={...next.velocity};
+   if(incoming < -1 && v.y > .3){ratio=v.y/-incoming;break;}
+  }
+  assert.ok(ratio!==null && ratio>.55 && ratio<.67, `unexpected grass rebound ratio ${ratio}`);
+ } finally {simulation.free();}
+});
+
+test('off-ball attacking support waits behind the offside line in both directions',()=>{
+ for(const home of [true,false]) {
+  const sign=home?1:-1;
+  const target=supportPosition([sign*20,5],{x:sign*8,z:0},{length:71,width:45},{home,attacking:true,run:true,role:6,offsideLine:sign*15});
+  assert.ok(target.x*sign<15);
+ }
 });
