@@ -400,3 +400,27 @@ held. No JavaScript errors. Results are at
 /workspace/playtest-artifacts/moving-pass/results.json. CDP touchEnd specifies
 the contacts being ended, so end only the pass contact in this test, not the
 stick/sprint contacts.
+
+## 2026-10-21 — goal-kick formation no longer abandons the centre
+
+User screenshot showed both teams arranged in two touchline columns at a home
+goal kick. Ordinary supportPosition reused each formation row's wide spawn
+lanes, with no goal-kick-specific build-up shape. Added goalKickPosition for six
+outfield roles: two short split outlets, central pivot, staggered midfield,
+one higher wide option and central forward. Opposing forwards press outside
+the box, midfield covers central lanes, defenders retain deeper positions.
+Mirror coordinates for the opposite kicking team and scale for pitch size.
+
+While a goal kick is pending this plan takes priority over ordinary formation
+support and the single short-receiver override. Players move into the shape
+through normal movement; no teleport, kick timing or camera changes. Existing
+opponent penalty-area exclusion still applies; the kicking team's players may
+receive inside their own penalty area.
+
+Verification: 92 unit tests pass; production build and Wrangler static-assets
+packaging pass. Browser tools/audit_goal_kick_shape.py checks both ball sides,
+central outlets and short options, compact legal opponents, human short goal
+kicks and CPU release, with no JS errors. Sarbah six-second home shape contains
+two central red options (z=1.1 m and 0.9 m), two short outlets and staggered
+higher support; all blue outfield players stay within 7.3 m of centre width.
+Screenshot: /workspace/playtest-artifacts/goal-kick-shape/shape-3.png .

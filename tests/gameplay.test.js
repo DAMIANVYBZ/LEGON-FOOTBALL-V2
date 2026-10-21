@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advancePlayer, groundPassVelocity, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
+import { advancePlayer, goalKickPosition, groundPassVelocity, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
 import { createMatchPhysics } from '../src/matchPhysics.js';
 
 test('play continues until the whole ball crosses either pitch boundary', () => {
@@ -350,4 +350,24 @@ test('a short pass clears a running foot without weakening backward or sideways 
   assert.deepEqual(groundPassVelocity(8, { x: 1, z: 0 }, { vx: 0, vz: 0 }), { x: 8, y: 0, z: 0 });
   const hard = groundPassVelocity(20, { x: 1, z: 0 }, runner);
   assert.ok(hard.x > 15.2 + 10, 'holding pass must still add strike speed');
+});
+
+
+test('goal kicks offer central support, staggered outlets and compact legal opposition', () => {
+  for (const field of [{ length: 56, width: 36 }, { length: 71, width: 45 }, { length: 79, width: 51 }]) {
+    const outlets = Array.from({ length: 6 }, (_, i) => goalKickPosition(i + 1, field, true, true));
+    const opponents = Array.from({ length: 6 }, (_, i) => goalKickPosition(i + 1, field, true, false));
+    assert.ok(outlets.filter(p => Math.abs(p.z) < field.width * .09).length >= 2, 'missing central passing options');
+    assert.ok(outlets.some(p => p.x < -field.length * .28), 'missing short outlet');
+    assert.ok(outlets.some(p => p.x > 0), 'missing higher outlet');
+    assert.ok(opponents[0].x > opponents[5].x, 'defenders and pressers swapped roles');
+    assert.ok(new Set(outlets.map(p => p.x)).size >= 4, 'flat goal-kick line');
+    for (const [teammate, points] of [[true, outlets], [false, opponents]]) for (let i = 0; i < points.length; i++) {
+      const p = points[i], reversed = goalKickPosition(i + 1, field, false, teammate);
+      assert.ok(Math.abs(p.z) < field.width * .3, 'player parked by the touchline');
+      assert.equal(reversed.x, -p.x); assert.equal(reversed.z, -p.z);
+      if (!teammate) assert.ok(p.x > -field.length / 2 + field.length * .17, 'opponent inside goal-kick penalty area');
+      for (const other of points.slice(i + 1)) assert.ok(Math.hypot(p.x - other.x, p.z - other.z) > 3, 'outlets crowded together');
+    }
+  }
 });

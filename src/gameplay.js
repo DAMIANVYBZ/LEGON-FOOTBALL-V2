@@ -188,3 +188,15 @@ export function groundPassVelocity(speed, direction, player, ability = 1) {
   const launchSpeed = speed * ability + momentum;
   return { x: direction.x * launchSpeed, y: 0, z: direction.z * launchSpeed };
 }
+
+
+// Seven-a-side goal-kick shape, measured from the kicking team's goal line.
+// Stagger short outlets, a central pivot and higher support instead of putting
+// every formation row in the same two wide lanes. Opponents protect the centre.
+export function goalKickPosition(role, field, kickingHome, teammate) {
+  const own = [[.14,-.18],[.18,.18],[.30,0],[.40,-.14],[.48,.24],[.59,.04]];
+  const opposition = [[.72,.14],[.65,-.16],[.51,-.06],[.43,.15],[.29,-.16],[.23,.05]];
+  const [depth, lane] = (teammate ? own : opposition)[clamp(role - 1, 0, 5)];
+  const sign = kickingHome ? 1 : -1;
+  return { x: sign * field.length * (depth - .5), z: sign * field.width * lane };
+}

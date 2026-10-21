@@ -23,7 +23,7 @@ import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.j
 import { playerMaterial } from './playerMaterial.js';
 import { transitionPlayerAction } from './playerAnimation.js';
 import { restartFraming, gameplayFraming } from './camera.js';
-import { advancePlayer, groundPassProfile, groundPassVelocity, slideHeading, skillTurn, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
+import { advancePlayer, goalKickPosition, groundPassProfile, groundPassVelocity, slideHeading, skillTurn, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
 
 const BALL_RADIUS = 0.11;
 const clipsToLoad = {
@@ -1778,7 +1778,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             // Stay in the receiving lane while a cross is still high overhead.
             const meetPass = receiving && ball.position.y < 0.85 && ball.position.distanceTo(destination) < 6;
             let targetX, targetZ;
-            if (receiving) { targetX = meetPass ? ball.position.x + ballVelocity.x * 0.12 : destination.x; targetZ = meetPass ? ball.position.z + ballVelocity.z * 0.12 : destination.z; }
+            if (restart?.type === 'goalKick') {
+              const shape = goalKickPosition(person.role, { length: LENGTH, width: WIDTH }, restart.home, person.home === restart.home);
+              targetX = shape.x; targetZ = shape.z;
+            } else if (receiving) { targetX = meetPass ? ball.position.x + ballVelocity.x * 0.12 : destination.x; targetZ = meetPass ? ball.position.z + ballVelocity.z * 0.12 : destination.z; }
             else if (restart && index === shortReceiver) {
               const sign = restart.home ? 1 : -1;
               targetX = restart.spot.x + sign * (restart.type === 'corner' ? -5 : 7);
