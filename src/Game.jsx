@@ -613,6 +613,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         passTarget = near; passDestination = new THREE.Vector3(target.x, 0, target.z); passDeadline = elapsed + 4; events.passes++;
         if (piece.button === 'l') say('cross', { team: hallName(true) });
       }
+      physics?.releaseFrom(controlled);
       action(taker, piece.button === 'j' ? 'pass' : 'kick', true); sound.kick(Math.min(1, plan.speed / 30));
       const spinName = { dip: 'DIP', curlLeft: 'CURL', curlRight: 'CURL', knuckle: 'KNUCKLEBALL' }[plan.style];
       show(`${verdict}${spinName ? spinName + ' · ' : ''}${shot ? (piece.restart.type === 'penalty' ? 'PENALTY KICK!' : 'FREE KICK!') : piece.button === 'j' ? 'SHORT PASS' : 'CROSS!'}`, 1.2);
@@ -707,6 +708,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         people[7].reactAt = elapsed + (0.2 + random() * 0.12) / difficulty.keeper;
       } else { ballVelocity.copy(direction.multiplyScalar(speed * teamAbility)); ballVelocity.y = lift; }
       if (throwIn) { ballVelocity.y = Math.max(2, ballVelocity.y); action(person, 'throwIn', true); }
+      physics?.releaseFrom(controlled);
       sound.kick(Math.min(1, speed / 30));
       if (shot || kind === 'shot' || kind === 'powerShot' || kind === 'finesse' || name === 'chipShot') { lastShooter = controlled; lastShotAt = elapsed; say('shot', { who: who(controlled), team: hallName(true) }); }
       else if (kind === 'cross') say('cross', { team: hallName(true) });
@@ -815,6 +817,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (kind === 'shoot') { events.awayShots++; lastShooter = index; lastShotAt = elapsed; say('shot', { who: who(index), team: hallName(person.home) }); }
       else if (kind === 'cross') say('cross', { team: hallName(person.home) });
       else if (kind === 'through') say('through', { who: who(target), team: hallName(person.home) });
+      physics?.releaseFrom(index);
       count(`cpu ${kind}`);
       action(person, kind === 'shoot' ? 'kick' : kind === 'cross' ? 'chip' : 'pass', true);
       if (throwIn) { ballVelocity.y = Math.max(2, ballVelocity.y); action(person, 'throwIn', true); }

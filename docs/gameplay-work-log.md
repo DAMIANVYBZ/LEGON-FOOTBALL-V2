@@ -332,3 +332,32 @@ body deflections, behind/raised first touches, manual aim, CPU shot height and
 lofted crossing with no JS errors. Body-contact fixture starts at the new 38 cm
 resting dribble point and moves the blocker by the same amount to preserve the
 original 27 cm ball-to-defender separation.
+
+## 2026-10-21 — repair pass release regression
+
+User reported passing stopped working after 1f40c83. Reproduced a stationary
+backward pass at the new 38 cm dribble point: initial vx=-12.5 m/s became
++3.58 m/s on the first physics step, leaving the ball on the wrong side of the
+passer. The coarse whole-body capsule blocked the strike through the player's
+stance. Previous isolated pass checks exercised forward release, missing this.
+
+Physics releaseFrom(index) briefly makes only the striker's capsule a sensor,
+until the ball clears 50 cm horizontally or 180 ms expires. Opponents remain
+solid throughout. Apply on successful human, CPU and set-piece kicks; reset
+clears it. Do not move/teleport the ball or loosen opponent collisions. The
+new physics regression checks backward travel and an opponent interception.
+Browser directional pass audit verifies actual ball progress, quick/charged
+passes and real keyboard/gamepad/touch release paths, not pass counters alone.
+
+Body-deflection smoke fixture now inspects the first deflection event rather
+than asserting last touch after another 100 ms, when the rebound can legitimately
+hit the former carrier's solid body again.
+
+Release validation: 90 unit tests pass, including minimum-speed tap passes and
+charged backward passes, with a solid opponent intercepting normally. Production
+build and Wrangler packaging dry run pass. Physics browser replay passes 5/12/24 m
+receptions, first-touch bounds, home/away dribble deflections, shots and crosses.
+The browser release audit covers eight directions at three charge lengths and
+actual keyboard, gamepad and touchscreen events. The touch directional fixture
+holds its receiver stationary; moving receivers can legitimately change the
+assisted launch direction while the browser is waiting to dispatch a tap.

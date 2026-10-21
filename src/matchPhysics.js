@@ -128,14 +128,18 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
     body.setLinvel(v, true);
   }
 
-  let accumulator = 0;
+  let accumulator = 0, release = null;
   return {
     reset(position, velocity, spin = { x: 0, y: 0, z: 0 }) {
       body.setTranslation(position, true);
       body.setLinvel(velocity, true);
       setSpin(spin);
-      accumulator = 0;
+      accumulator = 0; release = null;
     },
+    // The body capsule approximates the whole player, including both boots.
+    // A kick across the player's stance must be allowed to leave that capsule.
+    // Only the striker is excluded, until separation or a short safety timeout.
+    releaseFrom(index) { release = { index, remaining: 0.18, stepped: false }; },
     // Spin in radians per second, set at the moment of a kick.
     setSpin,
     spin() { return { ...spin }; },
@@ -148,8 +152,13 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
         body.setTranslation(position, true);
       if (Math.hypot(velocity.x - currentVelocity.x, velocity.y - currentVelocity.y, velocity.z - currentVelocity.z) > 0.01)
         body.setLinvel(velocity, true);
+      if (release) {
+        const striker = playerPositionsNow[release.index];
+        if (release.remaining <= 0 || (release.stepped && striker
+          && Math.hypot(position.x - striker.x, position.z - striker.z) > 0.5)) release = null;
+      }
       players.forEach(({ body: player, collider }, index) => {
-        collider.setSensor(index === carrier);
+        collider.setSensor(index === carrier || index === release?.index);
         const position = playerPositionsNow[index];
         if (position) player.setNextKinematicTranslation({ x: position.x, y: 0.85, z: position.z });
       });
@@ -178,6 +187,7 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
         landing(before);
         integrateRotation(world.timestep);
         accumulator -= world.timestep;
+        if (release) { release.remaining -= world.timestep; release.stepped = true; }
       }
       return { position: body.translation(), velocity: body.linvel(), rotation: { ...rotation }, spin: { ...spin }, lastTouch };
     },

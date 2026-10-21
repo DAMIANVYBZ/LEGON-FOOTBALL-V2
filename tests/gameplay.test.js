@@ -318,3 +318,25 @@ test('stationary control is close to the boots and a reversal cannot teleport th
   }
   assert.ok(ball.x < -0.37);
 });
+
+
+test('a close backward pass clears the striker without disabling defender collisions', async () => {
+  for (const speed of [8, 12]) for (const blocked of [false, true]) {
+    const players = [{ x: 0, z: 0 }, { x: blocked ? -1.2 : 10, z: 0 }];
+    const simulation = await createMatchPhysics({ length: 71, width: 45,
+      goalWidth: 7.32, goalHeight: 2.44, playerPositions: players });
+    try {
+      let position = { x: 0.38, y: 0.11, z: 0 }, velocity = { x: -speed, y: 0, z: 0 };
+      simulation.reset(position, velocity); simulation.releaseFrom(0);
+      let defenderTouch = false;
+      for (let i = 0; i < 18; i++) {
+        const next = simulation.step(1 / 60, position, velocity, players);
+        position = next.position; velocity = next.velocity;
+        assert.notEqual(next.lastTouch, 0, 'the striker blocked their own release');
+        defenderTouch ||= next.lastTouch === 1;
+      }
+      if (blocked) assert.ok(defenderTouch, 'opponents must still intercept the release');
+      else { assert.ok(position.x < -1.5, 'backward pass did not leave the boots'); assert.ok(velocity.x < -speed * 0.6); }
+    } finally { simulation.free(); }
+  }
+});

@@ -65,7 +65,10 @@ async def development_checks(page):
         d.scenario({ball:[sign*.38,.11,0],owner,players:[...players,
           {index:owner,x:0,z:0},{index:blocker,x:sign*.65,z:0,downFor:3}]});
         const before=d.snapshot().events.dribbleDeflections||0;
-        d.step(.1);const s=d.snapshot();
+        // Inspect the first deflection, before a legitimate rebound can hit
+        // the former carrier's now-solid capsule a second time.
+        let s=d.snapshot();
+        for(let i=0;i<6 && (s.events.dribbleDeflections||0)===before;i++){d.step(1/60);s=d.snapshot();}
         if(s.possessor>=0 || s.awayCarrier>=0 || s.lastTouchHome!==!home
           || (s.events.dribbleDeflections||0)!==before+1)
           throw Error('Body contact did not break dribble: '+JSON.stringify({home,state:s}));
