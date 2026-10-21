@@ -450,3 +450,21 @@ build passes desktop keyboard and emulated landscape-phone joystick, multitouch,
 pass and pause checks, with no debug API or JavaScript errors. Final first-half
 results: /workspace/ball-control-audit/final-venues/audit.json. Earlier transport
 and replay-time-budget failures were rerun successfully on the merged code.
+
+
+## 2026-10-21 — prevent sprinting ahead of the controlled ball
+
+Reproduced the user's sprint regression at varied gait/turn phases: the prior
+revision failed 29/84 cases. Add reachable catch-up touches, stride-speed
+coordination and bounded lateral recovery while carrying; keep slow recovery
+steps animated and preserve R1/R2 speed differences and independent pass travel.
+The new sprint audit passes 348 controller cases across worn, artificial and
+grass surfaces, including tired players and repeated bursts. All 103 unit tests
+and the existing controller, running-pass, boot-control and physics replays pass.
+See [sprint recovery details](boot-control-physics.md#sprint-recovery-follow-up--2026-10-21)
+for measurements, the baseline failure and replay commands.
+
+The active-team Sarbah first-half replay also completes with all 17 event groups
+passing. Production desktop keyboard and emulated landscape-phone joystick,
+multitouch, passing and pause checks pass with no JavaScript errors. Build and
+Cloudflare static-asset packaging dry run pass.

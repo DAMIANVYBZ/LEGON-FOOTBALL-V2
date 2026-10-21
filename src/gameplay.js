@@ -27,12 +27,12 @@ export function pitchExit(from, to, field, radius = 0.11) {
 // Positions are metres and speeds are metres per second. The same movement
 // model drives the human player and CPU players, so possession switches do not
 // change how a footballer accelerates or turns.
-export function advancePlayer(state, input, dt, { sprint = false, dribbling = false, keeper = false, controlledSprint = false, ability = 1 } = {}) {
+export function advancePlayer(state, input, dt, { sprint = false, dribbling = false, keeper = false, controlledSprint = false, ability = 1, speedLimit = Infinity } = {}) {
   const length = Math.hypot(input.x, input.z);
   const directionX = length > 0.001 ? input.x / length : 0;
   const directionZ = length > 0.001 ? input.z / length : 0;
   const pace = (keeper ? 4.8 : dribbling ? (sprint ? controlledSprint ? 6 : 7.2 : 4.7) : sprint ? controlledSprint ? 6.8 : 8.1 : 5.8) * ability;
-  const wantedSpeed = pace * Math.min(1, length);
+  const wantedSpeed = Math.min(pace * Math.min(1, length), Math.max(0, speedLimit));
   const wantedX = directionX * wantedSpeed;
   const wantedZ = directionZ * wantedSpeed;
   const reversing = state.vx * wantedX + state.vz * wantedZ < -0.1;

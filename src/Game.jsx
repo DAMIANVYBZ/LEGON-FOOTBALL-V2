@@ -22,7 +22,7 @@ import { createOffsideTracker, offsidePositions, offsideInterference, goalCrossi
 import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.js';
 import { playerMaterial } from './playerMaterial.js';
 import { transitionPlayerAction } from './playerAnimation.js';
-import { createBallControl, footTouch, needsControlTrap, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
+import { createBallControl, footTouch, controlStrideLimit, controlStrideInput, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
 import { plantControlFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
 import { advancePlayer, goalKickPosition, groundPassProfile, groundPassVelocity, slideHeading, skillTurn, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
@@ -385,7 +385,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // Outfield movement with stamina: sprinting drains it, a tired player is slower.
     function run(person, input, dt, options) {
       const sprint = options.sprint && person.stamina > STAMINA.minimumToSprint;
-      const speed = advancePlayer(person.motion, input, dt, { ...options, sprint,
+      const carrying = options.dribbling && !restart && keeperHolding < 0;
+      const strideInput = carrying ? controlStrideInput(person.motion, input, ball.position) : input;
+      const speedLimit = carrying ? controlStrideLimit(person.motion, strideInput, ball.position, ballVelocity) : Infinity;
+      const speed = advancePlayer(person.motion, strideInput, dt, { ...options, sprint, speedLimit,
         ability: (options.ability ?? 1) * (1 - STAMINA.speedLoss * (1 - person.stamina)) });
       person.stamina = sprint && speed > 4.5 ? Math.max(0, person.stamina - STAMINA.sprintDrain * dt)
         : Math.min(1, person.stamina + (speed < 2 ? STAMINA.restRecover : STAMINA.jogRecover) * dt);
@@ -439,8 +442,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     function moveAction(person, speed) {
       if (elapsed < person.actionUntil) return;
-      if (speed < 0.25) { idle(person); return; }
       const carrying = people.indexOf(person) === possessor || people.indexOf(person) === awayCarrier;
+      if (speed < (carrying ? 0.1 : 0.25)) { idle(person); return; }
       action(person, person.keeper ? 'goalkeeperSidestep' : carrying ? 'dribble' : 'jog');
       if (person.currentAction) person.currentAction.timeScale = THREE.MathUtils.clamp(speed / 4.5, 0.7, 1.45);
     }
@@ -456,7 +459,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const owner = possessor >= 0 ? possessor : awayCarrier;
       if (restart || keeperHolding >= 0 || owner < 0) return;
       const person = people[owner];
-      if (elapsed >= ballControl.trapUntil || elapsed < (person.downUntil || 0) || !needsControlTrap(ball.position, ballVelocity, person.motion)) return;
+      if (elapsed >= ballControl.trapUntil || elapsed < (person.downUntil || 0) || !(needsControlTrap(ball.position, ballVelocity, person.motion) || needsStrideTouch(ball.position, ballVelocity, person.motion))) return;
       const toes = person.footBones || [];
       const nearest = toes.reduce((best, toe) => {
         toe.getWorldPosition(footPoint);
@@ -1939,7 +1942,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             if (dribbler !== carryOwner) ballControl = createBallControl(elapsed);
             const carrier = people[dribbler];
             const touch = footTouch(ballControl, ball.position, ballVelocity, carrier.motion, feetOf(carrier), elapsed,
-              { sprint: Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5 });
+              { sprint: dribbler === controlled ? touchSprint && !controlledSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5 });
             if (touch) {
               ballVelocity.set(touch.velocity.x, touch.velocity.y, touch.velocity.z);
               if (touch.spin) physics?.setSpin(touch.spin);
@@ -2096,8 +2099,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           reset(); keeperHolding = -1; random = createRandom(seed); kickoffWaiting = false; possessor = owner >= 0 && people[owner].home ? owner : -1;
           awayCarrier = owner >= 0 && !people[owner].home ? owner : -1;
           lastTouchHome = touch ?? (owner < 0 ? velocity[0] > 0 : people[owner].home);
-          for (const { index, x, z, heading, downFor = 0 } of players) {
-            const p = people[index]; Object.assign(p.motion, { x, z, vx: 0, vz: 0, heading: heading ?? (p.home ? 0 : Math.PI) });
+          for (const { index, x, z, heading, downFor = 0, stamina } of players) {
+            const p = people[index]; if (stamina !== undefined) p.stamina = clamp(stamina, 0, 1);
+            Object.assign(p.motion, { x, z, vx: 0, vz: 0, heading: heading ?? (p.home ? 0 : Math.PI) });
             p.mesh.position.set(x, 0, z); p.mesh.rotation.y = meshYawForHeading(p.motion.heading); p.actionUntil = 0; p.downUntil = elapsed + downFor;
           }
           controlLockUntil = elapsed + controlLockFor;

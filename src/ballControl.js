@@ -18,6 +18,42 @@ export function needsControlTrap(ball, velocity, player) {
   return Math.hypot(rx, rz) > 0.8 && rx * dx + rz * dz > 0.08;
 }
 
+export function needsStrideTouch(ball, velocity, player) {
+  const speed = Math.hypot(player.vx, player.vz);
+  if (speed < 0.1 || ball.y > BALL.radius + 0.15 || velocity.y > 1) return false;
+  const dx = ball.x - player.x, dz = ball.z - player.z;
+  const lead = (dx * player.vx + dz * player.vz) / speed;
+  const closing = speed - (velocity.x * player.vx + velocity.z * player.vz) / speed;
+  return Math.hypot(dx, dz) < 0.9 && lead < 0.25 && (closing > 0.8 || lead < -0.15);
+}
+
+// Take a small step into a wide touch while retaining the requested bearing.
+// This is used only by a current carrier, never by a passer chasing a release.
+export function controlStrideInput(player, input, ball) {
+  const amount = Math.hypot(input.x, input.z);
+  const dx = ball.x - player.x, dz = ball.z - player.z;
+  if (amount < 0.05 || ball.y > BALL.radius + 0.15 || Math.hypot(dx, dz) > 1.4) return input;
+  const fx = input.x / amount, fz = input.z / amount;
+  const side = dx * -fz + dz * fx;
+  const steer = Math.sign(side) * clamp((Math.abs(side) - 0.25) * 3, 0, 0.9);
+  if (!steer) return input;
+  const scale = amount / Math.hypot(1, steer);
+  return { x: (fx - fz * steer) * scale, z: (fz + fx * steer) * scale };
+}
+
+// A carrier must leave time for the next boot contact when accelerating or
+// changing lanes. Limit the wanted stride, preserving normal acceleration;
+// this never alters the ball or applies to an already released pass.
+export function controlStrideLimit(player, input, ball, velocity) {
+  const amount = Math.hypot(input.x, input.z);
+  const dx = ball.x - player.x, dz = ball.z - player.z;
+  if (amount < 0.05 || ball.y > BALL.radius + 0.15 || Math.hypot(dx, dz) > 1.4) return Infinity;
+  const fx = input.x / amount, fz = input.z / amount;
+  const lead = dx * fx + dz * fz;
+  const ballPace = velocity.x * fx + velocity.z * fz;
+  return Math.max(lead < -0.3 ? 0.2 : 1.2, ballPace + (lead + 0.1) * 12);
+}
+
 export function footTouch(state, ball, velocity, player, feet, time, { sprint = false } = {}) {
   if (state.lastMotion) {
     const dvx = player.vx - state.lastMotion.vx, dvz = player.vz - state.lastMotion.vz;
@@ -34,7 +70,13 @@ export function footTouch(state, ball, velocity, player, feet, time, { sprint = 
     .sort((a, b) => a.gap - b.gap);
   const foot = candidates[0];
   if (!foot || ball.y > BALL.radius + 0.15 || velocity.y > 1) return null;
-  const trapping = time < state.trapUntil && needsControlTrap(ball, velocity, player);
+  // Acceleration can outrun a slow touch even with no braking or turn.
+  // Give a ball falling behind the moving stride the same reachable-boot
+  // recovery used for turns, rather than waiting for the normal touch cadence.
+  const recovering = needsStrideTouch(ball, velocity, player);
+  const drifting = needsControlTrap(ball, velocity, player);
+  if (recovering) state.trapUntil = time + 0.15;
+  const trapping = time < state.trapUntil && (drifting || recovering);
   const interval = trapping ? 0.04 : speed < 0.3 ? 0.1 : sprint ? 0.3 : 0.23;
   if (foot.gap <= BOOT_REACH && time - state.lastTouch >= interval) {
     const lead = (ball.x - player.x) * fx + (ball.z - player.z) * fz;
@@ -43,13 +85,15 @@ export function footTouch(state, ball, velocity, player, feet, time, { sprint = 
     const lateral = speed < 0.3 ? 0 : clamp(-side * 3, -1, 1);
     const next = { x: speed < 0.3 ? 0 : player.vx + fx * push - fz * lateral,
       y: Math.max(-0.6, Math.min(0, velocity.y)), z: speed < 0.3 ? 0 : player.vz + fz * push + fx * lateral };
-    if (trapping && speed >= 0.3) {
+    if (trapping && speed >= 0.1) {
       // Draw the ball onto the new stride at this boot contact, rather than
       // leaving it behind the body as the player turns through 180 degrees.
       const tx = player.x + player.vx / speed * 0.28 - ball.x;
       const tz = player.z + player.vz / speed * 0.28 - ball.z;
-      const scale = Math.min(5, 3 / (Math.hypot(tx, tz) || 1));
-      next.x = player.vx + tx * scale; next.z = player.vz + tz * scale;
+      const reserve = recovering ? (sprint ? 1.5 : 0.7) : 0;
+      const cx = tx * 5 + player.vx / speed * reserve, cz = tz * 5 + player.vz / speed * reserve;
+      const scale = Math.min(1, 3 / (Math.hypot(cx, cz) || 1));
+      next.x = player.vx + cx * scale; next.z = player.vz + cz * scale;
     }
     state.lastTouch = time; state.receiveUntil = 0; state.touches++;
     return { velocity: next, contact: true, foot, spin: { x: next.z / BALL.radius, y: 0, z: -next.x / BALL.radius } };

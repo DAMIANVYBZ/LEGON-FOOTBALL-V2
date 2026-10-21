@@ -86,3 +86,38 @@ python tools/audit_rules.py
 npm run build
 npm run deploy:check
 ```
+
+
+## Sprint recovery follow-up — 2026-10-21
+
+The user reported sometimes running ahead of the ball while sprinting. The
+previous revision failed 29 of 84 transition fixtures varying initial ball lead,
+jog duration and the direction chosen as sprint starts. A from-rest sprint alone
+did not cover these stride phases. A slow touch could be overtaken before the
+normal 0.3 s sprint contact interval; a ball trapped behind a nearly stationary
+player could also be left there by the next step.
+
+Changes: allow an earlier, reachable catch-up touch and give it enough forward
+pace for the next stride; coordinate the carrier's wanted speed with ball travel
+through the existing acceleration bounds; take a bounded lateral recovery step
+for wide touches; and keep the dribble step active during slow recovery. Fast
+and controlled sprint use their actual control intent and stamina eligibility.
+These movement adjustments apply only while carrying a reachable ground ball.
+Released passes and normal off-ball running keep their existing movement and
+physics. Ball position and height are never rewritten by this recovery.
+
+Verification: 103 unit tests pass. The new tools/audit_sprint_control.py runs 116
+controller cases on each of Sarbah, Astro and Oval (348 total), covering R1/R2,
+stride phases, initial touches from behind, angles, fatigue and repeated bursts.
+Every case retains control, keeps the ball grounded and rejects sustained lag
+behind the runner. Maximum ball/player gaps are 0.792 m, 0.904 m and 0.760 m
+respectively. The existing distinct sprint-speed, controller, moving keyboard/
+gamepad/three-finger touch passes, boot-control and physics replays pass.
+
+Replay with Vite running: `python tools/audit_sprint_control.py`. Results and
+baseline reproductions are in /workspace/sprint-control-audit/.
+
+The active-team Sarbah first-half replay also completes with all 17 event groups
+passing. Production desktop keyboard and emulated landscape-phone joystick,
+multitouch, passing and pause checks pass with no JavaScript errors. Build and
+Cloudflare static-asset packaging dry run pass.
