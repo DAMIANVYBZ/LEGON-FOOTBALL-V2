@@ -297,3 +297,38 @@ checks load player FBX, animation library, manifest, logo and Oval GLB with no
 missing local assets or JavaScript errors. Production project-path desktop and
 phone controls also pass. The connected Cloudflare account must report the new
 commit as Published before a live deployment can be claimed.
+
+## 2026-10-21 — close ground control and released kick inputs
+
+User supplied current hosting URL:
+https://legon-football-v2.damiannyckid00.workers.dev/ . Outbound proxy rejects
+access to this host with HTTP 403, so local checks cannot certify its deployment.
+
+Ground-control fixes: align fallback rendered turf with the physics floor (it
+was 7 cm below it), lower imported baked pitches by their 3 cm export offset,
+and retain pitch markings just above the same floor. Use speed-dependent boot
+spacing: 38 cm at rest, up to 50 cm jogging and 62 cm sprinting. Turning and
+trapping share a bounded correction instead of snapping the ball across the
+player. Set rolling spin from carrier velocity to avoid the frozen-sphere look.
+
+A released pass, through ball, chip or shot now retries for at most 300 ms while
+waiting for reachable ground contact/control lock, retaining the charged power.
+The buffer is bound to the controlled player, expires, and clears on pause,
+reset, restart, opponent possession or knockdown. Ground kicks require horizontal
+reach and foot height, avoiding kicks of airborne balls from far below them.
+Dev-only scenario controlLockFor reproduces receipt/contact timing without
+changing production controls. Browser fixtures are in tools/audit_ball_control.py.
+
+Verification: 89 unit tests pass, production build succeeds, and Wrangler dry
+run packages 51 files. Chromium controlled fixtures confirm stationary spacing
+0.398 m at ball centre height 0.11 m, grounded running control, one released
+pass/shot/chip surviving a 280 ms lock, and expiration without a delayed kick.
+The controller regression replay also passes charged passes, sprint, slides,
+connected spin, visible boundary restart and half/full-time menus, with no
+JavaScript errors. Screenshot: playtest-artifacts/ball-control/close-ground-control.png
+(outside the repository; isolated fixture with other players moved away).
+Additional physics browser replay passes 5/12/24 m receptions, home/away opponent
+body deflections, behind/raised first touches, manual aim, CPU shot height and
+lofted crossing with no JS errors. Body-contact fixture starts at the new 38 cm
+resting dribble point and moves the blocker by the same amount to preserve the
+original 27 cm ball-to-defender separation.

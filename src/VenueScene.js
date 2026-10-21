@@ -46,7 +46,7 @@ export function buildVenueScene({ scene, venue, box, material }) {
   const ground = soil ? '#956b4d' : venue.kind === 'stadium' ? '#546d57' : '#677c55';
   box(length + 160, 0.24, width + 150, ground, 0, -0.22, 0);
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(length, width), new THREE.MeshStandardMaterial({ map: surfaceTexture(venue), roughness: 1 }));
-  pitch.rotation.x = -Math.PI / 2; pitch.position.y = -0.07; pitch.receiveShadow = true; scene.add(pitch);
+  pitch.rotation.x = -Math.PI / 2; pitch.position.y = 0; pitch.receiveShadow = true; scene.add(pitch);
 
   function tree(x, z, scale = 1) {
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.18 * scale, .28 * scale, 3.7 * scale, 6), material('#654934'));

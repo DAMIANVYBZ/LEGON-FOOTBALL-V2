@@ -72,7 +72,7 @@ test('first touches from behind and above settle without teleporting at differen
       ball = next; settled ||= next.settled;
     }
     assert.ok(settled);
-    assert.ok(Math.abs(ball.x - 0.68 * sign) < 0.01);
+    assert.ok(Math.abs(ball.x - 0.38 * sign) < 0.01);
     assert.ok(Math.abs(ball.y - 0.11) < 0.001);
   }
 });
@@ -175,7 +175,7 @@ test('dribbling stays ahead through a full turn and does not hit the owner colli
     assert.equal(step.lastTouch, -1, 'the carrier sensor is not a fresh deflection');
     ball = carryBall(step.position, motion, 1 / 60);
     const f = forwardFromHeading(motion.heading);
-    assert.ok((ball.x - motion.x) * f.x + (ball.z - motion.z) * f.z >= 0.499);
+    assert.ok((ball.x - motion.x) * f.x + (ball.z - motion.z) * f.z >= 0.25);
     assert.ok(Math.hypot(ball.x - motion.x, ball.z - motion.z) < 1);
   }
   physics.free();
@@ -301,4 +301,20 @@ test('slide uses the stick direction or a nearby ball rather than a stale facing
  assert.equal(slideHeading({x:0,z:0},player,{x:-20,z:0}),0);
  assert.equal(skillTurn(0),0);assert.equal(skillTurn(1),2*Math.PI);
  assert.ok(skillTurn(.01)<.01);assert.ok(skillTurn(.5)>3&&skillTurn(.5)<3.2);
+});
+
+
+test('stationary control is close to the boots and a reversal cannot teleport the ball', () => {
+  const player = { x: 0, z: 0, vx: 0, vz: 0, heading: 0 };
+  let ball = { x: 0.86, y: 0.11, z: 0 };
+  for (let i = 0; i < 120; i++) ball = carryBall(ball, player, 1 / 60);
+  assert.ok(Math.hypot(ball.x, ball.z) < 0.4);
+  player.heading = Math.PI;
+  for (let i = 0; i < 60; i++) {
+    const next = carryBall(ball, player, 1 / 60);
+    assert.ok(Math.hypot(next.x - ball.x, next.z - ball.z) <= 0.1 + 1e-9);
+    assert.equal(next.y, 0.11);
+    ball = next;
+  }
+  assert.ok(ball.x < -0.37);
 });

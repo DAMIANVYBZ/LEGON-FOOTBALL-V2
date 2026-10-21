@@ -89,10 +89,15 @@ export function supportPosition(spawn, ball, field, { home, attacking, run = fal
   return target;
 }
 
-// On acquisition, approach the dribble point without applying the ahead-of-feet
-// constraint: that constraint can teleport a ball received from behind.
+// Keep a stopped ball by the boots; allow a slightly longer touch at pace.
+// Corrections are bounded in the moving player's frame, including sharp turns.
+export function dribbleLead(player, sprint = false) {
+  const speed = Math.hypot(player.vx || 0, player.vz || 0);
+  return 0.38 + Math.min(1, speed / 7.2) * (sprint ? 0.24 : 0.12);
+}
+
 export function settleFirstTouch(ball, player, dt, sprint = false) {
-  const forward = forwardFromHeading(player.heading), lead = sprint ? 0.86 : 0.68;
+  const forward = forwardFromHeading(player.heading), lead = dribbleLead(player, sprint);
   const targetX = player.x + forward.x * lead, targetZ = player.z + forward.z * lead;
   const dx = targetX - ball.x, dz = targetZ - ball.z, distance = Math.hypot(dx, dz);
   const correction = Math.min(distance * (1 - Math.exp(-24 * dt)), 6 * dt);
@@ -102,17 +107,10 @@ export function settleFirstTouch(ball, player, dt, sprint = false) {
   return { x, y, z, settled: Math.hypot(targetX - x, targetZ - z) < 0.08 && Math.abs(y - 0.11) < 0.01 };
 }
 
-// The owner does not collide with their own dribble. Once settled, a turn must
-// not leave the controlled ball behind their heels.
 export function carryBall(ball, player, dt, sprint = false) {
-  const forward = forwardFromHeading(player.heading);
-  const lead = sprint ? 0.86 : 0.68;
-  const follow = 1 - Math.exp(-24 * dt);
-  let x = ball.x + (player.x + forward.x * lead - ball.x) * follow;
-  let z = ball.z + (player.z + forward.z * lead - ball.z) * follow;
-  const ahead = (x - player.x) * forward.x + (z - player.z) * forward.z;
-  if (ahead < 0.5) { x += forward.x * (0.5 - ahead); z += forward.z * (0.5 - ahead); }
-  return { x, y: 0.11, z };
+  // Physics already advances the ball with its carrier's velocity. Only steer
+  // the relative position here; never snap a turning ball across the player.
+  return settleFirstTouch(ball, player, dt, sprint);
 }
 
 export function canWinTackle(defender, carrier, ball, shield = false) {

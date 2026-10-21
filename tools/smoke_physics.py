@@ -62,8 +62,8 @@ async def development_checks(page):
       const deflections=[];
       for(const home of [true,false]) {
         const sign=home?1:-1,owner=home?5:12,blocker=home?10:4;
-        d.scenario({ball:[sign*.68,.11,0],owner,players:[...players,
-          {index:owner,x:0,z:0},{index:blocker,x:sign*.95,z:0,downFor:3}]});
+        d.scenario({ball:[sign*.38,.11,0],owner,players:[...players,
+          {index:owner,x:0,z:0},{index:blocker,x:sign*.65,z:0,downFor:3}]});
         const before=d.snapshot().events.dribbleDeflections||0;
         d.step(.1);const s=d.snapshot();
         if(s.possessor>=0 || s.awayCarrier>=0 || s.lastTouchHome!==!home

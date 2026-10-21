@@ -183,7 +183,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         surroundings.traverse(node => { if (node.isMesh) { node.castShadow = false; node.receiveShadow = true; } });
         if (asset.bakedPitch) {
           stripBakedPitch(surroundings, asset.bakedPitch);
-          fieldGroup.position.y = 0.04; // the model's grass sits 3 cm up
+          surroundings.position.y -= 0.03; // align exported grass with the physics ground at y=0
         }
         box(420, 0.16, 420, venue.kind === 'stadium' ? '#526c50' : '#78865a', 0, -0.3, 0);
         scene.add(surroundings);
@@ -319,7 +319,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     let passTarget = -1, passDeadline = 0, passDestination = null;
     const offside = createOffsideTracker();
     let lastRuleTouch = -1, lastRuleDeliberate = false, restartTouch = null;
-    let carryOwner = -1, settlingFirstTouch = false;
+    let carryOwner = -1, settlingFirstTouch = false, pendingKick = null;
     let keeperHolding = -1, keeperReleaseAt = 0;
     let keeperHoldStart = 0, throwHold = false, catchFrom = null, catchStart = 0, keeperTarget = -1;
     let awayPassTarget = -1, awayPassDestination = null, awayPassDeadline = 0;
@@ -619,8 +619,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     function kick(speed, name = 'kick', lift = 0.15, shot = null, loft = null) {
       const person = people[controlled];
-      if (keeperHolding >= 0 || person.sentOff || elapsed < (person.downUntil || 0) || elapsed < controlLockUntil || person.mesh.position.distanceTo(ball.position) > 1.65) return;
-      if (ruleTouch(controlled, { deliberate: true, kick: true })) return;
+      if (keeperHolding >= 0 || person.sentOff || elapsed < (person.downUntil || 0)
+        || elapsed < controlLockUntil || Math.hypot(person.motion.x - ball.position.x, person.motion.z - ball.position.z) > 1.25
+        || (!restart && ball.position.y > 0.55)) return false;
+      if (ruleTouch(controlled, { deliberate: true, kick: true })) return true;
       const throwIn = restart?.type === 'throwIn';
       if (throwIn) ball.position.y = 1.8;
       const direction = aim();
@@ -714,6 +716,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       show(name === 'pass' ? 'PASS!' : name === 'goalkeeperPass' ? 'THROUGH BALL!' : name === 'chip' ? (crossing ? 'CROSS!' : 'LOFTED PASS!')
         : name === 'chipShot' ? 'CHIP SHOT!' : name === 'powerShot' ? 'POWER SHOT!' : shot?.style === 'finesse' || finesseHold ? 'FINESSE SHOT!'
         : shot?.style === 'low' ? 'LOW DRIVEN SHOT!' : 'SHOT!');
+      return true;
+    }
+    // A released input survives a short trap/contact lock, but belongs only to
+    // this player and expires before it could kick a later, unrelated ball.
+    function requestKick(...args) {
+      pendingKick = null;
+      if (!kick(...args)) pendingKick = { args, player: controlled, expires: elapsed + 0.3 };
     }
     // The teammate a held ball would be thrown to: the one the player aims at,
     // otherwise the best-placed free teammate.
@@ -815,7 +824,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // Corners, goal kicks and free kicks: the ball waits on its spot, the taker
     // stands behind it and the other side keeps its distance.
     function startRestart(type, home, spot) {
-      pendingRestart = null; passHold = false; skill = null;
+      pendingRestart = null; passHold = false; pendingKick = null; pendingShot = null; skill = null;
       offside.clear(); lastRuleTouch = -1; lastRuleDeliberate = false; restartTouch = null; setPiece = null;
       possessor = -1; awayCarrier = -1; passTarget = -1; awayPassTarget = -1; keeperHolding = -1; setKeeperBall(false); targetRing.visible = false;
       if (type === 'freeKick' && insideBox(spot.x, spot.z, !home)) spot = { x: ownGoalX(!home) + (home ? -1 : 1) * (boxDepth + 0.8), z: spot.z };
@@ -1042,7 +1051,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       }
       if (key === 'q') { if (lastTouchHome) { runUntil = elapsed + 2; show('TEAMMATE RUN'); } else switchPlayer(); }
       if (key === 'j') { if (people[controlled].mesh.position.distanceTo(ball.position) < 1.65) { passHold = true; power = 0; } else tackle(); }
-      if (key === 'i') kick(17, 'goalkeeperPass', 0.15);
+      if (key === 'i') requestKick(17, 'goalkeeperPass', 0.15);
       if (key === 'k') {
         if (pendingShot) { if (pendingShot.style === 'normal') pendingShot.style = 'low'; return; } // second tap: low driven
         if (!lastTouchHome || people[controlled].mesh.position.distanceTo(ball.position) > 1.65) tackle(); else { shootHold = true; power = 0; }
@@ -1070,7 +1079,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       }
       if (key === 'j' && passHold) {
         passHold = false; const charge = power; power = 0;
-        if (!pausedLocal && !pendingRestart) kick(groundPassProfile(charge).speed, 'pass', 0, null, { ground: true, power: charge });
+        if (!pausedLocal && !pendingRestart) requestKick(groundPassProfile(charge).speed, 'pass', 0, null, { ground: true, power: charge });
         return;
       }
       if (key === 'h') { shieldHold = false; return; }
@@ -1080,7 +1089,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (key === 'g') { keeperRushHold = false; return; }
       if (key === 'l' && lobHold) {
         lobHold = false;
-        if (!pausedLocal) kick(18, 'chip', 3.5, null, { power, goalKick: restart?.type === 'goalKick' });
+        if (!pausedLocal) requestKick(18, 'chip', 3.5, null, { power, goalKick: restart?.type === 'goalKick' });
         power = 0; return;
       }
       if (key === 'k' && shootHold) {
@@ -1126,7 +1135,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       keys.clear(); heldKeys.clear(); touchAxis.x = 0; touchAxis.z = 0; padAxis.x = 0; padAxis.z = 0;
       touchSprint = shieldHold = passHold = shootHold = lobHold = finesseHold = teammateContain = jockeyHold = keeperRushHold = false;
       controlledSprint = strafeHold = containHold = sprintJockey = throwHold = false;
-      pendingShot = null; power = 0; shotStyle = 'normal'; padWant = {};
+      pendingShot = null; pendingKick = null; power = 0; shotStyle = 'normal'; padWant = {};
       if (setPiece?.phase === 'charge') { setPiece.phase = 'aim'; setPiece.button = null; }
     }
     function cancelAction(key) {
@@ -1240,7 +1249,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     function reset(home = nextKickoffHome) {
       setPieceCam = null;
       offside.clear(); lastRuleTouch = -1; lastRuleDeliberate = false; restartTouch = null;
-      carryOwner = -1; settlingFirstTouch = false;
+      carryOwner = -1; settlingFirstTouch = false; pendingKick = null;
       kickoffHome = home; nextKickoffHome = true; slideUntil = 0; sliding = null; skill = null; pendingRestart = null; passHold = false; pendingShot = null; setPiece = null;
       people.forEach(person => {
         person.downUntil = 0; person.getUpAt = 0;
@@ -1536,8 +1545,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         if (passHold || shootHold || throwHold || lobHold || setPiece?.phase === 'charge') power = Math.min(1, power + dt / 1.2);
         if (pendingShot && elapsed >= pendingShot.at) {
           const { power: strength, style } = pendingShot; pendingShot = null;
-          if (style === 'chip') kick(0, 'chipShot', 0, { power: strength, style });
-          else kick(0, style === 'power' ? 'powerShot' : strength > 0.8 ? 'scissor' : 'kick', 0, { power: strength, style });
+          if (style === 'chip') requestKick(0, 'chipShot', 0, { power: strength, style });
+          else requestKick(0, style === 'power' ? 'powerShot' : strength > 0.8 ? 'scissor' : 'kick', 0, { power: strength, style });
+        }
+        if (pendingKick) {
+          const queued = pendingKick;
+          if (controlled !== queued.player || elapsed > queued.expires || awayCarrier >= 0 || keeperHolding >= 0
+            || people[controlled].sentOff || elapsed < (people[controlled].downUntil || 0)) pendingKick = null;
+          else if (kick(...queued.args)) pendingKick = null;
         }
         if (resetAt && elapsed >= resetAt) reset(nextKickoffHome);
         if (resetAt && physics) {
@@ -1931,6 +1946,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               if (settlingFirstTouch && carried.settled) settlingFirstTouch = false;
               ball.position.set(carried.x, carried.y, carried.z);
               ballVelocity.set(carrier.motion.vx, 0, carrier.motion.vz);
+              // The sphere must roll while carried too, rather than sliding
+              // motionless across the pitch after a trap clears its spin.
+              spinBall({ x: carrier.motion.vz / BALL_RADIUS, y: 0, z: -carrier.motion.vx / BALL_RADIUS });
             }
           }
           carryOwner = !restart && keeperHolding < 0 ? (possessor >= 0 ? possessor : awayCarrier) : -1;
@@ -2038,7 +2056,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         distributionTarget: index => keeperThrowTarget(index),
         press: key => { const wasPaused = pausedLocal; pausedLocal = false; pressAction(key); pausedLocal = wasPaused; },
         release: key => { const wasPaused = pausedLocal; pausedLocal = false; releaseAction(key); pausedLocal = wasPaused; },
-        scenario: ({ ball: position, velocity = [0, 0, 0], spin = { x: 0, y: 0, z: 0 }, owner = -1, players = [], seed = 1, touch }) => {
+        scenario: ({ ball: position, velocity = [0, 0, 0], spin = { x: 0, y: 0, z: 0 }, owner = -1, players = [], seed = 1, touch, controlLockFor = 0 }) => {
           people.forEach(p => { p.sentOff = false; p.yellows = 0; p.mesh.visible = true; }); // each test starts with a full side
           reset(); keeperHolding = -1; random = createRandom(seed); kickoffWaiting = false; possessor = owner >= 0 && people[owner].home ? owner : -1;
           awayCarrier = owner >= 0 && !people[owner].home ? owner : -1;
@@ -2047,6 +2065,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const p = people[index]; Object.assign(p.motion, { x, z, vx: 0, vz: 0, heading: heading ?? (p.home ? 0 : Math.PI) });
             p.mesh.position.set(x, 0, z); p.mesh.rotation.y = meshYawForHeading(p.motion.heading); p.actionUntil = 0; p.downUntil = elapsed + downFor;
           }
+          controlLockUntil = elapsed + controlLockFor;
           ball.position.fromArray(position); ballVelocity.fromArray(velocity); physics?.reset(ball.position, ballVelocity, spin);
         },
       };
