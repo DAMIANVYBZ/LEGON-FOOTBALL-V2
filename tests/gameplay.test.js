@@ -371,3 +371,17 @@ test('goal kicks offer central support, staggered outlets and compact legal oppo
     }
   }
 });
+
+test('repositioning players at a reset cannot launch the ball as a kinematic collision', async () => {
+  const simulation = await createMatchPhysics({ length: 71, width: 45, goalWidth: 7.32,
+    goalHeight: 2.44, playerPositions: [{ x: 30, z: 0 }] });
+  const position = { x: .6, y: .11, z: 0 }, velocity = { x: 0, y: 0, z: 0 };
+  const players = [{ x: 0, z: 0 }];
+  simulation.reset(position, velocity, undefined, players);
+  for(let i=0;i<10;i++) {
+    const next=simulation.step(1/60,position,velocity,players);
+    Object.assign(position,next.position);Object.assign(velocity,next.velocity);
+    assert.ok(position.y<.15);assert.ok(Math.hypot(velocity.x,velocity.y,velocity.z)<1);
+  }
+  simulation.free();
+});

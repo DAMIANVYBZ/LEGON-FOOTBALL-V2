@@ -26,3 +26,13 @@ test('different moves blend continuously and slower recovery keeps its full dura
  assert.ok(person.currentAction.time<1);person.mixer.update(1.1);
  assert.equal(person.currentAction.paused,true);assert.equal(joint.position.y,1);
 });
+
+test('a released strike begins at foot contact and keeps the remaining follow-through', () => {
+ const root=new Object3D(),joint=new Object3D();joint.name='joint';root.add(joint);
+ const clip=new AnimationClip('strike',1,[new NumberKeyframeTrack('joint.position[x]',[0,.28,1],[0,.4,.1])]);
+ const person={mixer:new AnimationMixer(root)};
+ transitionPlayerAction(person,clip,{once:true,duration:.55,fade:0,startPhase:.28});person.mixer.update(0);
+ assert.ok(Math.abs(joint.position.x-.4)<1e-6);
+ person.mixer.update(.55*.7);assert.equal(person.currentAction.isRunning(),true);
+ person.mixer.update(.02);assert.equal(person.currentAction.paused,true);
+});

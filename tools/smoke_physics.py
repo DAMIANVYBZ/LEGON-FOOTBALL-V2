@@ -85,7 +85,9 @@ async def development_checks(page):
         const horizontal=Math.hypot(first.ball[0]-initial.ball[0],first.ball[2]-initial.ball[2]);
         if(first.possessor!==receiver || horizontal>.2 || initial.ball[1]-first.ball[1]>.09)
           throw Error('First touch snapped ball: '+JSON.stringify({raised,initial:initial.ball,first:first.ball,owner:first.possessor}));
-        d.step(.6);const settled=d.snapshot(),player=settled.players[receiver];
+        // A raised reception keeps its real gravity and first bounce; it is
+        // not flattened onto the turf by possession. Allow that bounce to land.
+        d.step(raised?1.2:.6);const settled=d.snapshot(),player=settled.players[receiver];
         if(settled.possessor!==receiver || Math.hypot(settled.ball[0]-player.x,settled.ball[2]-player.z)>1.1 || settled.ball[1]>.15)
           throw Error('First touch failed to settle: '+JSON.stringify({raised,state:settled}));
         firstTouches.push(raised?'raised reception':'ball from behind');

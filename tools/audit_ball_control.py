@@ -28,9 +28,9 @@ async def main():
    fresh({controlLockFor:1});d.press('j');d.release('j');d.step(1.1);
    if(d.snapshot().possessor!==5)throw Error('expired input kicked a later ball');checks.expiry=true;
    fresh();d.move(1,0);const samples=[];
-   for(let i=0;i<90;i++){d.step(1/60);d.animate(1/60);s=d.snapshot();p=s.players[5];samples.push({gap:Math.hypot(s.ball[0]-p.x,s.ball[2]-p.z),y:s.ball[1]});}
+   for(let i=0;i<90;i++){d.step(1/60);s=d.snapshot();p=s.players[5];samples.push({gap:Math.hypot(s.ball[0]-p.x,s.ball[2]-p.z),y:s.ball[1]});}
    if(samples.slice(30).some(s=>s.gap>.65||Math.abs(s.y-.11)>.001))throw Error('running carry lost foot contact');checks.running=samples;
-   d.move(0,0);d.step(.5);d.animate(.5);return checks;
+   d.move(0,0);d.step(.5);return checks;
   }''')
   await page.add_style_tag(content='.pause-scrim,.controls-hint{visibility:hidden!important}')
   await page.screenshot(path=str(out/'close-ground-control.png'))

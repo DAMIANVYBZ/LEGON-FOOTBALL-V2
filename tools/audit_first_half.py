@@ -195,7 +195,9 @@ async def main(args):
                     if args.realtime:
                         await page.get_by_role('button', name='RESUME').click()
                     play_started = monotonic()
-                    for tick in range(300 if args.realtime else 155):
+                    # Leave room for the clock to stop during visible boundary restarts.
+                    # periodEnded still stops the replay before a second half.
+                    for tick in range(360 if args.realtime else 240):
                         state = await page.evaluate('''({tick,advance}) => {
                           const d=window.__footballDebug,s=d.snapshot();
                           if(s.periodEnded)return s;

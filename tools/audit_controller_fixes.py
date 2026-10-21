@@ -1,10 +1,10 @@
 """Replay controller charging, sprint, slides, spin, visible exits and period menus."""
-import asyncio,json,shutil,os,math
+import argparse,asyncio,json,shutil,os,math
 from pathlib import Path
 from playwright.async_api import async_playwright
 from audit_first_half import start
 
-async def main():
+async def main(first_half=False):
  out=Path('/workspace/playtest-artifacts/controller-fixes');out.mkdir(parents=True,exist_ok=True)
  report={};errors=[]
  async with async_playwright() as p:
@@ -58,7 +58,7 @@ async def main():
     // No opponent: spin takes 1.25s and keeps the ball close without teleporting.
     fresh();d.press('o');const spin=[];let previous=d.snapshot().ball;
     for(let i=0;i<78;i++){
-     d.step(1/60);d.animate(1/60);const s=d.snapshot(),p=s.players[5];
+     d.step(1/60);const s=d.snapshot(),p=s.players[5];
      const gap=Math.hypot(s.ball[0]-p.x,s.ball[2]-p.z),jump=Math.hypot(s.ball[0]-previous[0],s.ball[2]-previous[2]);
      if(gap>1||jump>.16||s.possessor!==5)throw Error('spin lost its ball connection '+JSON.stringify({gap,jump,s}));
      spin.push({t:i/60,heading:p.heading,gap,jump,active:!!s.skill});previous=s.ball;
@@ -99,6 +99,12 @@ async def main():
    assert 'SECOND HALF' in await page.evaluate('document.activeElement.textContent')
    await page.evaluate('window.__pad.axes[1]=0;window.__footballDebug.pollGamepad()')
    await page.screenshot(path=str(out/'halftime-gamepad-focus.png'))
+   if first_half:
+    report['menus']='halftime navigation checked; stopped before second half'
+    assert not errors,errors
+    (out/'results.json').write_text(json.dumps(report,indent=2))
+    print('PASS: controller charging/sprints, slide contact, connected spin, animation clock and halftime navigation; ERRORS []',flush=True)
+    return
    await page.evaluate('window.__pad.axes[1]=0;window.__pad.buttons[0]={pressed:true,value:1};window.__footballDebug.pollGamepad()')
    await page.get_by_role('heading',name='HALF TIME',exact=True).wait_for(state='hidden')
    await page.evaluate('window.__pad.buttons[0]={pressed:false,value:0};window.__footballDebug.pollGamepad()')
@@ -113,4 +119,6 @@ async def main():
    assert not errors,errors
    (out/'results.json').write_text(json.dumps(report,indent=2));print('PASS: sprint modes and held-resume; charged passes; directed, delayed-contact slide; smooth connected spin; visible goal kick; halftime/fulltime gamepad menus; ERRORS []',flush=True)
   finally:await browser.close()
-if __name__=='__main__':asyncio.run(main())
+if __name__=='__main__':
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--first-half',action='store_true')
+ asyncio.run(main(parser.parse_args().first_half))

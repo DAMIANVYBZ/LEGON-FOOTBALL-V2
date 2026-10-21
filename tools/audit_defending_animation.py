@@ -53,7 +53,7 @@ async def main():
    await page.evaluate('''()=>{const d=window.__footballDebug;d.scenario({ball:[15,.11,0],players:Array.from({length:14},(_,index)=>({index,x:index===5?0:5000,z:0,downFor:index===5?0:30}))});d.tackle('slide');d.setCameraMode('Co-op');}''')
    samples=[];last=0
    for t in [.1,.3,.6,.9,1.12,2,3.65,3.85,4.4,5,5.95,6.3]:
-    await page.evaluate('''dt=>{const d=window.__footballDebug;d.step(dt);d.animate(dt)}''',t-last);last=t
+    await page.evaluate('''dt=>{const d=window.__footballDebug;d.step(dt)}''',t-last);last=t
     visual=await page.evaluate('window.__footballDebug.playerVisual(5)');state=await page.evaluate('window.__footballDebug.snapshot()')
     assert visual['visible']
     size=[b-a for a,b in zip(visual['bounds']['min'],visual['bounds']['max'])]

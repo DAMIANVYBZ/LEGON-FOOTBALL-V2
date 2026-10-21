@@ -130,10 +130,19 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
 
   let accumulator = 0, release = null;
   return {
-    reset(position, velocity, spin = { x: 0, y: 0, z: 0 }) {
+    reset(position, velocity, spin = { x: 0, y: 0, z: 0 }, playerPositionsNow = []) {
       body.setTranslation(position, true);
       body.setLinvel(velocity, true);
       setSpin(spin);
+      // A kickoff/restart repositions players instantly. Do not turn that
+      // placement into a swept kinematic lunge on the next physics tick.
+      playerPositionsNow.forEach((position, index) => {
+        const player = players[index]?.body;
+        if (!player) return;
+        const at = { x: position.x, y: 0.85, z: position.z };
+        player.setTranslation(at, true); player.setNextKinematicTranslation(at);
+        player.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      });
       accumulator = 0; release = null;
     },
     // The body capsule approximates the whole player, including both boots.

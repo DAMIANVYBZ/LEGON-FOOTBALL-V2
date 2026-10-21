@@ -424,3 +424,29 @@ kicks and CPU release, with no JS errors. Sarbah six-second home shape contains
 two central red options (z=1.1 m and 0.9 m), two short outlets and staggered
 higher support; all blue outfield players stay within 7.3 m of centre width.
 Screenshot: /workspace/playtest-artifacts/goal-kick-shape/shape-3.png .
+
+
+## 2026-10-21 — boot-driven rolling and grounded control
+
+Extend the current close-control fixes with velocity changes gated by animated
+boot contacts. Remove the carry position/velocity overwrite, allow independent
+rolling between touches, and use a small leg reach for stopping and turns. Keep
+the pass momentum, striker release exclusion and central goal-kick shape from
+1f40c83 through abfdd86. Released strikes start at the contact portion of their
+clip; full-power ground shots use a standing kick. Pending kicks also cancel on
+opponent touches, pointer cancellation, pause and restarts.
+
+Reposition physics player bodies at kickoffs/restarts along with the ball so a
+placement cannot impart an artificial kinematic collision velocity. Imported
+grass alignment is measured against the physical floor. Existing fallback turf
+alignment and phone zoom remain in place. See [boot-control physics](boot-control-physics.md)
+for implementation, measured gaps, replay commands and validation limits.
+
+Verified: 99 unit tests; 136 event groups and first-half completion in all eight
+venues; 80 rules groups across the same venues; stationary, directional and
+moving pass regressions; human/CPU goal-kick positioning; controller charging,
+slides, spin and halftime navigation; and 5/12/24 m receptions. The production
+build passes desktop keyboard and emulated landscape-phone joystick, multitouch,
+pass and pause checks, with no debug API or JavaScript errors. Final first-half
+results: /workspace/ball-control-audit/final-venues/audit.json. Earlier transport
+and replay-time-budget failures were rerun successfully on the merged code.
