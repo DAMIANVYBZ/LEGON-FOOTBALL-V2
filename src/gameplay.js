@@ -179,3 +179,12 @@ export function skillTurn(progress) {
   const t = clamp(progress, 0, 1);
   return 2 * Math.PI * t * t * (3 - 2 * t);
 }
+
+
+// A pass is a strike relative to a moving foot. Preserve forward momentum so
+// a light pass still leaves a running passer, instead of becoming a dribble.
+export function groundPassVelocity(speed, direction, player, ability = 1) {
+  const momentum = Math.max(0, (player.vx || 0) * direction.x + (player.vz || 0) * direction.z);
+  const launchSpeed = speed * ability + momentum;
+  return { x: direction.x * launchSpeed, y: 0, z: direction.z * launchSpeed };
+}

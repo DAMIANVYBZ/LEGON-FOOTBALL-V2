@@ -361,3 +361,42 @@ The browser release audit covers eight directions at three charge lengths and
 actual keyboard, gamepad and touchscreen events. The touch directional fixture
 holds its receiver stationary; moving receivers can legitimately change the
 assisted launch direction while the browser is waiting to dispatch a tap.
+
+## 2026-10-21 — recording exposes running-pass recapture
+
+User supplied Screen Recording 2026-10-21 192142.mp4 (33.53 seconds). Inspected
+one-second frames across gameplay and quarter-second frames at 16–19 s. PASS!
+and the strike animation appear while the ball stays beside the moving player.
+The stationary backwards-release repair did not address this running case.
+
+Reproduced on Oval with continuous forward movement and no defenders: a tap
+launched at 8 m/s regardless of the passer's movement. While sprinting at about
+7.2 m/s the ball never got more than 0.60 m ahead and the player regained
+possession within one second. Ordinary jogging taps also recaptured, with max
+gap 0.77 m. The player accelerates to off-ball running speed after releasing,
+while ground friction slows the low-powered pass. This is why animation-only
+or stationary release checks missed the visible failure.
+
+Ground passes now add the passer's velocity component towards the actual launch
+direction to the charged strike speed. A sprinting tap therefore launches at
+about 15 m/s instead of 8 m/s; backward/lateral passes retain their base speed,
+and holding pass still increases strike speed/range. Keep the ball's actual
+position, physical friction, normal interceptions and normal possession pickup.
+Do not mask the issue with a longer possession lock or a ball teleport.
+
+Regression tool tools/audit_moving_pass.py holds movement throughout charging
+and after release: real controller polling in normal/R2/R1 modes, short taps
+and charged passes, ordinary active teams in an open lane, real keyboard input,
+and a three-finger touchscreen move+sprint+pass gesture. Check separation from
+the moving player and absence of premature recapture, not animation/counters.
+
+Verification: all 91 unit tests pass; production build and Wrangler dry run
+pass. The prior 24 directional/stationary pass replay still passes keyboard,
+controller and touchscreen release. New moving-pass replay passes nine
+controller mode/charge combinations with movement held for a full second after
+release; normal active sides in an open lane; real keyboard sprint+pass; and
+three simultaneous touch contacts, lifting only PASS while move+sprint remain
+held. No JavaScript errors. Results are at
+/workspace/playtest-artifacts/moving-pass/results.json. CDP touchEnd specifies
+the contacts being ended, so end only the pass contact in this test, not the
+stick/sprint contacts.

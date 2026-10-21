@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advancePlayer, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
+import { advancePlayer, groundPassVelocity, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, keeperThreat, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from '../src/gameplay.js';
 import { createMatchPhysics } from '../src/matchPhysics.js';
 
 test('play continues until the whole ball crosses either pitch boundary', () => {
@@ -339,4 +339,15 @@ test('a close backward pass clears the striker without disabling defender collis
       else { assert.ok(position.x < -1.5, 'backward pass did not leave the boots'); assert.ok(velocity.x < -speed * 0.6); }
     } finally { simulation.free(); }
   }
+});
+
+
+test('a short pass clears a running foot without weakening backward or sideways passes', () => {
+  const runner = { vx: 7.2, vz: 0 };
+  assert.deepEqual(groundPassVelocity(8, { x: 1, z: 0 }, runner), { x: 15.2, y: 0, z: 0 });
+  assert.deepEqual(groundPassVelocity(8, { x: -1, z: 0 }, runner), { x: -8, y: 0, z: 0 });
+  assert.deepEqual(groundPassVelocity(8, { x: 0, z: 1 }, runner), { x: 0, y: 0, z: 8 });
+  assert.deepEqual(groundPassVelocity(8, { x: 1, z: 0 }, { vx: 0, vz: 0 }), { x: 8, y: 0, z: 0 });
+  const hard = groundPassVelocity(20, { x: 1, z: 0 }, runner);
+  assert.ok(hard.x > 15.2 + 10, 'holding pass must still add strike speed');
 });

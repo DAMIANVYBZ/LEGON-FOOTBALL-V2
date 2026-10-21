@@ -23,7 +23,7 @@ import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.j
 import { playerMaterial } from './playerMaterial.js';
 import { transitionPlayerAction } from './playerAnimation.js';
 import { restartFraming, gameplayFraming } from './camera.js';
-import { advancePlayer, groundPassProfile, slideHeading, skillTurn, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
+import { advancePlayer, groundPassProfile, groundPassVelocity, slideHeading, skillTurn, carryBall, settleFirstTouch, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
 
 const BALL_RADIUS = 0.11;
 const clipsToLoad = {
@@ -706,6 +706,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         }
         // The keeper needs a moment to read the strike.
         people[7].reactAt = elapsed + (0.2 + random() * 0.12) / difficulty.keeper;
+      } else if (chargedPass) {
+        const launch = groundPassVelocity(speed, direction, person.motion, teamAbility);
+        ballVelocity.set(launch.x, launch.y, launch.z);
       } else { ballVelocity.copy(direction.multiplyScalar(speed * teamAbility)); ballVelocity.y = lift; }
       if (throwIn) { ballVelocity.y = Math.max(2, ballVelocity.y); action(person, 'throwIn', true); }
       physics?.releaseFrom(controlled);
