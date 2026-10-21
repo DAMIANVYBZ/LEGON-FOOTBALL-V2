@@ -1,3 +1,4 @@
+import { publicAsset } from './publicAsset.js';
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
@@ -243,7 +244,7 @@ export default function Landing({ enter, explore, quick, venue }) {
   return <div className="landing-page">
     <div className="landing-shell">
       <header className="landing-nav">
-        <img src="/images/logo.svg" alt="Legon Football"/>
+        <img src={publicAsset('/images/logo.svg')} alt="Legon Football"/>
         <span className="nav-divider"/>
         <span className="nav-location"><i/> UNIVERSITY OF GHANA <b>·</b> ACCRA</span>
         <div className="nav-actions"><button type="button" onClick={explore}>THE FIELDS</button><button type="button" className="nav-play" onClick={quick}>QUICK MATCH <span>↗</span></button></div>

@@ -163,3 +163,40 @@ With the Vite development server running, `python tools/smoke_match.py` exercise
 For first-half playtesting, `python tools/audit_first_half.py` exercises match events and plays to halftime at all eight venues; add `--venue sarbah --realtime` for a normal-speed first half. `python tools/check_phone_camera.py` checks the 25% phone zoom, touchline framing and paused rendering. The [gameplay audit log](docs/gameplay-audit-2026-10-20.md) records the reproduced bugs, fixes, validation and publishing status.
 
 `python tools/audit_match_edges.py` replays line-ball retrieval, whole-ball boundary decisions, diagonal corner exits, goalkeeper targeting and interrupted phone gestures at every venue. The [continued gameplay audit](docs/gameplay-audit-round-2-2026-10-20.md) records these corrections and their verification.
+
+## Cloudflare Workers static hosting
+
+This game needs static asset hosting. `wrangler.jsonc` explicitly tells Cloudflare
+to publish `dist`, avoiding automatic framework detection trying to parse the
+Vite build configuration as a Worker project.
+
+In the connected Cloudflare Git build, keep:
+
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy` (or `npm run deploy`)
+- Worker name: `legon-football-v2`
+- Root directory: the repository root
+
+Wrangler is pinned in devDependencies. Cloudflare supplies deployment credentials
+for its connected build; no API token belongs in this repository. Check the
+configuration locally with `npm run build && npm run deploy:check`. A dry run
+validates configuration and packaging; it does not publish to an account.
+
+Cloudflare Workers and custom-domain hosting use the default `/` base path;
+leave `VITE_PUBLIC_BASE` unset. The optional `VITE_PUBLIC_BASE` setting supports
+repository-path hosting elsewhere. Public models, animations, images and version
+checks follow that base. `tools/check_pages_hosting.py` tests a strict static
+server, including the Oval venue GLB, and accepts `FOOTBALL_BASE_URL` for either
+root or subpath hosting. Static serving must not use a SPA fallback to hide
+missing-file requests during this check.
+
+The FBX refers to texture files on its exporter's machine that were never
+included in this repository. Those specific unavailable references use material
+colour fallbacks instead of making broken requests. Embedded and supplied valid
+textures continue to load normally.
+
+After Cloudflare publishes a working `workers.dev` address, connect
+`thelegonlive.live` in the Worker's Domains settings. The domain's Cloudflare zone
+must be active; if nameservers still point elsewhere, copy Cloudflare's assigned
+nameservers into Namecheap Custom DNS while retaining existing email records.
+The repository configuration does not change domain registration or DNS.

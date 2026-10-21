@@ -108,11 +108,11 @@ async def production_checks(page, base):
     assert await page.evaluate('typeof window.__footballDebug') == 'undefined'
     # Use the browser's route/proxy, just like the game's update check. The
     # separate Node request client may not share the cloud browser's network.
-    version = await page.evaluate('''async () => {
-      const response=await fetch('/version.json', {cache:'no-store'});
+    version = await page.evaluate('''async base => {
+      const response=await fetch(base+'/version.json', {cache:'no-store'});
       if(!response.ok)throw Error('Version request failed: '+response.status);
       return response.json();
-    }''')
+    }''',base)
     assert version['commit'] and version['builtAt'] and version['id']
     expected = os.environ.get('FOOTBALL_EXPECT_BUILD_ID')
     if expected:

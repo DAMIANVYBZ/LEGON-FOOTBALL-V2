@@ -1,3 +1,4 @@
+import { publicAsset } from './publicAsset.js';
 // Which build is running, and whether a newer one has been published.
 export const BUILD = typeof __APP_BUILD__ === 'undefined' ? { commit: 'dev', builtAt: '', id: 'dev' } : __APP_BUILD__;
 
@@ -13,7 +14,7 @@ export function versionLabel(build = BUILD) {
 // The development server has no version.json, so it never reports an update.
 export async function checkForUpdate(fetcher = globalThis.fetch) {
   try {
-    const response = await fetcher(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const response = await fetcher(`${publicAsset('/version.json')}?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) return null;
     const live = await response.json();
     return live?.id && live.id !== BUILD.id ? live : null;

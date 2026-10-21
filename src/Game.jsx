@@ -2207,7 +2207,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const name = part.name.toLowerCase();
           const kitColor = person.keeper ? (person.home ? '#ffd54f' : '#9c66ed') : person.home ? kits.home : kits.away;
           const cloth = ['shirt', 'socks', 'shorts'].some(piece => name.includes(piece));
-          const color = name.includes('shorts') ? (person.home ? '#184b34' : '#262c38') : cloth ? kitColor : undefined;
+          const original = Array.isArray(part.material) ? part.material[0] : part.material;
+          const fallback = original.userData.missingExportTextures
+            ? name.includes('body') ? '#8c5d3d' : name.includes('shoes') ? '#252525' : '#201d1b' : undefined;
+          const color = name.includes('shorts') ? (person.home ? '#184b34' : '#262c38') : cloth ? kitColor : fallback;
           const roughness = cloth ? .92 : name.includes('body') ? .68 : name.includes('shoes') ? .55 : .9;
           const dress = original => playerMaterial(original, { color, cloth, roughness });
           part.material = Array.isArray(part.material) ? part.material.map(dress) : dress(part.material);

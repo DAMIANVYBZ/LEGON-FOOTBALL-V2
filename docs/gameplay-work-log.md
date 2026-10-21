@@ -246,3 +246,54 @@ focused controller replay passes, and all 41 legacy fixture groups plus a full
 match pass. Production controls are checked on desktop and emulated landscape
 phone. The user also asked to open the in-chat browser; this session has no such
 interactive panel, so show browser screenshots and explain that limitation.
+
+## GitHub Pages migration — 2026-10-21
+
+User ran out of Netlify credits and explicitly requested hosting on GitHub.
+Prepare GitHub Actions deployment for `main` to the `github-pages` environment,
+with build/test, Pages artifact and deploy jobs. Base-path support covers logo,
+FBX/GLB loaders, animation library, manifest and version polling. Default root
+hosting remains supported. Project URL:
+https://damianvybz.github.io/LEGON-FOOTBALL-V2/ . No domain/DNS changes requested.
+
+Strict subpath hosting exposed pre-existing unavailable FBX texture URLs pointing
+to `/home/app/mixamo-mini/tmp/skins_….fbm/`. Those files are not in the checkout or
+supplied files. Do not describe these maps as successfully restored: a Texture
+object existed, but its source failed to load. Ignore only these known obsolete
+export references, remove their unsupported maps, and retain material colour
+fallbacks. Valid supplied or embedded textures remain supported.
+
+88 unit tests and the project-path build pass. Production desktop/phone control
+checks run under `/LEGON-FOOTBALL-V2/`; a strict static-server Oval model/GLB/asset
+check verifies missing paths without SPA fallbacks. See README for setup/replay.
+
+GitHub Pages GET and POST API calls return Forbidden from this session. The Pages
+site cannot be enabled or its settings inspected through that API here. The owner
+may need to select Settings → Pages → Source: GitHub Actions and run the deployment
+workflow. Do not claim the public site is live without verification.
+
+
+## Cloudflare Workers deployment correction — 2026-10-21
+
+User chose Cloudflare with the Namecheap domain instead of publishing the GitHub
+Pages draft. No GitHub Pages workflow was committed or published. The screenshot
+shows Cloudflare Workers Git builds: `npm run build` succeeds, then
+`npx wrangler deploy` fails while parsing vite.config.js. Supply `wrangler.jsonc`
+with Worker name `legon-football-v2`, compatibility date and static asset directory
+`dist`; pin Wrangler 4.151.3 and expose deploy/dry-run scripts. Keep root base `/`
+for Workers and custom domains. Do not tell the user to recreate the project as
+Pages: the existing Workers static-assets deployment can host this game.
+
+The base-path and missing-export-texture repairs from hosting preparation are
+retained and tested. The planned GitHub Actions workflow was removed before any
+push. Direct Cloudflare account/DNS control is unavailable in this session; push
+the configuration and have the connected Cloudflare build deploy the new commit.
+A local Wrangler dry run verifies packaging, not a live publication or domain.
+
+Cloudflare correction verification: 88 tests pass; root production build passes;
+Wrangler 4.151.3 dry run reads all 51 static files and exits successfully without
+parsing vite.config.js as a Worker config. Strict root and project-path browser
+checks load player FBX, animation library, manifest, logo and Oval GLB with no
+missing local assets or JavaScript errors. Production project-path desktop and
+phone controls also pass. The connected Cloudflare account must report the new
+commit as Published before a live deployment can be claimed.

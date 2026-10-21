@@ -1,3 +1,4 @@
+import { publicAsset } from './publicAsset.js';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Game from './Game.jsx';
@@ -43,7 +44,7 @@ function saveLastMatch(config) {
   catch { /* Private browsing may disable local storage. */ }
 }
 
-function Logo() { return <img className="logo" src="/images/logo.svg" alt="Legon Football" />; }
+function Logo() { return <img className="logo" src={publicAsset('/images/logo.svg')} alt="Legon Football" />; }
 function Button({ children, onClick, className = '' }) { return <button className={'btn ' + className} onClick={onClick}>{children}</button>; }
 function SiteHeader({ onBack, cred = true }) { return <header className="site-header">{onBack && <Button onClick={onBack}>‹ &nbsp; BACK</Button>}<Logo/><div className="header-spacer"/>{cred && <><span className="cred">DEMO CRED<br/><strong>{readDemoBookings().coins}</strong></span><span className="profile">♟ &nbsp; Campus Player</span></>}</header>; }
 
