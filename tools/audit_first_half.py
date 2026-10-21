@@ -44,7 +44,7 @@ EVENTS = r'''spec => {
   });
   check('pass and receiver control transfer',()=>{
     fresh({players:[...far,{index:5,x:0,z:0},{index:6,x:12,z:0}]});
-    d.aim({x:1,z:0});d.press('j');d.release('j');expect(d.snapshot().passTarget===6,'Wrong receiver');
+    d.aim({x:1,z:0});d.press('j');d.step(.3);d.release('j');expect(d.snapshot().passTarget===6,'Wrong receiver');
     d.step(1.8);expect(d.snapshot().possessor===6 && d.snapshot().controlled===6,'Pass not received');
   });
   check('through pass',()=>{
@@ -67,8 +67,8 @@ EVENTS = r'''spec => {
   check('standing tackle and resolved slide',()=>{
     fresh({ball:[1,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:1.6,z:0,heading:Math.PI}]});
     const before=d.snapshot().events.tackles;d.tackle('standing');expect(d.snapshot().events.tackles>before,'Standing tackle failed');
-    fresh({ball:[1,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:1.6,z:0,heading:0}]});
-    d.tackle('slide');expect(!d.snapshot().sliding,'Resolved slide kept running');
+    fresh({ball:[1,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:1.6,z:0,heading:Math.PI,downFor:10}]});
+    d.tackle('slide');expect(d.snapshot().sliding,'Slide skipped its windup');d.step(1.2);expect(!d.snapshot().sliding,'Slide did not resolve');
     expect(!d.snapshot().players[5].sentOff,'Clean ball-first slide incorrectly awarded a red card');
   });
   check('missed slide has a recovery delay',()=>{
@@ -93,14 +93,14 @@ EVENTS = r'''spec => {
   });
   check('goal-line restart ownership',()=>{
     for(const side of [-1,1])for(const homeTouch of [true,false]){
-      fresh({ball:[side*(G+.2),.4,8],velocity:[side,0,0],owner:-1,touch:homeTouch});d.step(1/60);
+      fresh({ball:[side*(G+.2),.4,8],velocity:[side,0,0],owner:-1,touch:homeTouch});d.step(.95);
       const defendingHome=side<0,corner=homeTouch===defendingHome,r=d.snapshot().restart;
       expect(r?.type===(corner?'corner':'goalKick'),'Wrong goal-line restart');
       expect(r.home===(corner?!defendingHome:defendingHome),'Restart awarded to wrong team');
     }
   });
   check('throw-in',()=>{
-    fresh({ball:[0,.4,W/2+.2],velocity:[0,0,1],owner:-1,touch:true});d.step(1/60);
+    fresh({ball:[0,.4,W/2+.2],velocity:[0,0,1],owner:-1,touch:true});d.step(.95);
     expect(!d.snapshot().lastTouchHome,'Throw-in awarded to wrong side');
     expect(Math.abs(d.snapshot().ball[2])<W/2,'Throw-in remained outside pitch');
   });

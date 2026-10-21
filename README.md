@@ -89,16 +89,18 @@ Controllers (PlayStation, Xbox and generic pads) use the EA FC classic layout. T
 | R1 | Sprint | L1 / right-stick flick | Change player |
 | R2 | Controlled sprint | L2 | Jockey (L2 + R2 sprint jockey) |
 | L2 | Shield | ▢ | Standing tackle (a foot poked in, or a shoulder barge when running alongside); a miss is a short stumble |
-| ✕ | Ground pass | R1 + ▢ | Hard tackle (longer reach, more fouls) |
-| △ | Through pass | ◯ | Slide tackle: reaches furthest; a miss leaves you on the ground for seconds; from behind is almost always a red card |
+| ✕ | Ground pass: hold for range and speed, release to kick | R1 + ▢ | Hard tackle (longer reach, more fouls) |
+| △ | Through pass | ◯ | Slide tackle: aim with the left stick; contact follows the windup, not the button press. Body-first forceful contact can be a foul/card; a clean ball-first tackle remains legal |
 | ▢ | Shoot: hold for power; past a tenth of the bar it is a raised shot. Tap ▢ twice for a low driven shot | ✕ hold | Contain |
-| ◯ | Lob / cross, always in the air; hold for more power. A cross goes to the near post, penalty spot or far post, whichever the stick points at | R1 hold | Teammate contain |
+| ◯ | Lob / cross, always in the air; hold for more power. A cross goes to the near post, penalty spot or far post, whichever the stick points at | R1 hold | Full sprint and teammate contain |
 | R2 + ▢ | Finesse shot | △ hold | Goalkeeper rush out |
 | L1 + ▢ | Chip shot | R3 | Take control of the goalkeeper (again to hand back) |
 | L1 + R1 + ▢ | Power shot | | |
 | L1 + left stick | Strafe dribble | | |
-| Right stick | Skill move | | |
+| Right stick | Smooth 1.25-second spin with a close ball touch; release to neutral before another move | | |
 | L3 + R3 | Player lock (stops automatic switching) | | |
+
+In pause, halftime and full-time windows, use the left stick or D-pad to focus a button and ✕/A to activate it. ◯/B resumes an ordinary pause; at a period break it focuses Leave Match. R1 gives full sprint and R2 gives controlled sprint. Ground passes charge while held; a brief tap favours a short receiver, a longer hold reaches farther and travels faster. Physical exits remain visible for 0.85 seconds before the restart is set up, and the camera follows high balls.
 
 Shots are assisted: while you shoot roughly toward goal, the stick picks a spot inside the goal mouth (src/shooting.js). Turn the stick well away and the shot goes where it points. Error grows with power past three quarters of the bar and with distance, and the keeper needs a moment to read each strike, so shots into the corners score more often than shots at him, and nothing is certain either way. A cross met at head height in the box is headed at goal.
 

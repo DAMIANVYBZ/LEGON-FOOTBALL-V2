@@ -25,7 +25,7 @@ EVENTS = r'''spec => {
     for(const sign of [-1,1]){
       fresh({ball:[0,.11,sign*(W+.04)]});d.step(1/60);
       expect(d.snapshot().lastTouchHome,'Premature throw-in');
-      fresh({ball:[0,.11,sign*(W+.14)]});d.step(1/60);
+      fresh({ball:[0,.11,sign*(W+.14)]});d.step(.95);
       expect(!d.snapshot().lastTouchHome,'Missing throw-in after whole ball crossed');
     }
   });
@@ -33,7 +33,7 @@ EVENTS = r'''spec => {
     for(const sign of [-1,1])for(const touch of [true,false]){
       fresh({ball:[sign*(G+.04),.11,8],touch});d.step(1/60);
       expect(!d.snapshot().restart,'Premature goal-line restart');
-      fresh({ball:[sign*(G+.14),.11,8],touch});d.step(1/60);
+      fresh({ball:[sign*(G+.14),.11,8],touch});d.step(.95);
       const r=d.snapshot().restart,defendingHome=sign<0,corner=touch===defendingHome;
       expect(r?.type===(corner?'corner':'goalKick'),'Wrong restart after full crossing');
       expect(r.home===(corner?!defendingHome:defendingHome),'Wrong restart team');
@@ -55,13 +55,13 @@ EVENTS = r'''spec => {
   });
   check('diagonal goal-line exit does not also award a throw-in',()=>{
     for(const sign of [-1,1]){
-      fresh({ball:[sign*(G-.1),.6,W-.1],velocity:[sign*20,0,15],touch:sign>0});d.step(1/60);
+      fresh({ball:[sign*(G-.1),.6,W-.1],velocity:[sign*20,0,15],touch:sign>0});d.step(.95);
       const s=d.snapshot();expect(s.restart?.type==='goalKick','Double restart at pitch corner');
       expect(s.restart.home===(sign<0),'Wrong team after diagonal exit');
     }
   });
   check('diagonal touchline exit does not also award a corner',()=>{
-    fresh({ball:[G-.1,.6,W-.05],velocity:[15,0,20]});d.step(1/60);
+    fresh({ball:[G-.1,.6,W-.05],velocity:[15,0,20]});d.step(.95);
     const s=d.snapshot();expect(s.restart?.type==='throwIn'&&!s.restart.home,'Wrong restart after touchline crossing');
     expect(s.ball[0]<=G,'Throw-in was placed beyond the end line');
   });

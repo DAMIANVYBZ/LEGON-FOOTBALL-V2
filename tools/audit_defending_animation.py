@@ -76,7 +76,7 @@ async def main():
     const d=window.__footballDebug;d.move(0,0);
     const far=Array.from({length:14},(_,index)=>({index,x:5000,z:5000,downFor:30}));
     const before=d.snapshot().events.tackles;
-    d.scenario({ball:[1,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:1.6,z:0,heading:0}]});
+    d.scenario({ball:[1,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:1.6,z:0,heading:Math.PI,downFor:10}]});
     d.tackle('slide');d.step(1.12);const s=d.snapshot(),v=d.playerVisual(5);
     if(s.events.tackles!==before+1||s.sliding||v.action!=='stand')throw Error('clean slide did not win and enter get-up');
     if(v.downUntil-s.elapsed<2.1)throw Error('successful slide skips slow get-up');

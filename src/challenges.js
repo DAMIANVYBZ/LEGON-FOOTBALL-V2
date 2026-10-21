@@ -10,7 +10,8 @@ export function assessChallenge(tackler, carrier, ball, { style = 'standing', re
   const toward = bodyGap > 0 ? ((tackler.vx || 0) * cx + (tackler.vz || 0) * cz) / bodyGap : 0;
   const relative = bodyGap > 0 ? (((tackler.vx || 0) - (carrier.vx || 0)) * cx + ((tackler.vz || 0) - (carrier.vz || 0)) * cz) / bodyGap : 0;
   const approachSpeed = Math.max(0, Math.min(toward, relative));
-  const foul = blocked && contact && (style !== 'standing' || approachSpeed > 1.5);
+  const threshold = style === 'standing' ? 2.8 : style === 'hard' ? 1.8 : 2;
+  const foul = blocked && contact && approachSpeed > threshold;
   const card = !foul ? null : style === 'slide' && approachSpeed > 5 ? 'red'
     : style === 'slide' || approachSpeed > 5 ? 'yellow' : null;
   return { blocked, contact, foul, card, approachSpeed };
@@ -31,5 +32,5 @@ export function defensiveApproach(defender, carrier, ball, { goalX, primary = tr
 }
 
 // Half the old playback speed: each animation/recovery takes twice as long.
-export const SLIDE_TIMING = Object.freeze({ animation: 1.1, contactWindow: .75,
+export const SLIDE_TIMING = Object.freeze({ animation: 1.1, windup: .42, contactDelay: .58, contactWindow: .68,
   missedRecovery: 4.8, groundHold: 2.6, getUp: 2.2 });

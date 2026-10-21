@@ -27,11 +27,11 @@ export function pitchExit(from, to, field, radius = 0.11) {
 // Positions are metres and speeds are metres per second. The same movement
 // model drives the human player and CPU players, so possession switches do not
 // change how a footballer accelerates or turns.
-export function advancePlayer(state, input, dt, { sprint = false, dribbling = false, keeper = false, ability = 1 } = {}) {
+export function advancePlayer(state, input, dt, { sprint = false, dribbling = false, keeper = false, controlledSprint = false, ability = 1 } = {}) {
   const length = Math.hypot(input.x, input.z);
   const directionX = length > 0.001 ? input.x / length : 0;
   const directionZ = length > 0.001 ? input.z / length : 0;
-  const pace = (keeper ? 4.8 : dribbling ? (sprint ? 6.3 : 4.7) : sprint ? 8.1 : 5.8) * ability;
+  const pace = (keeper ? 4.8 : dribbling ? (sprint ? controlledSprint ? 6 : 7.2 : 4.7) : sprint ? controlledSprint ? 6.8 : 8.1 : 5.8) * ability;
   const wantedSpeed = pace * Math.min(1, length);
   const wantedX = directionX * wantedSpeed;
   const wantedZ = directionZ * wantedSpeed;
@@ -138,13 +138,13 @@ export function keeperThreat(ball, velocity, keeper, home, ability = 1) {
     result: speed < 14 * ability && lateral < 0.8 && y < 1.95 ? 'catch' : y > 1.7 ? 'punch' : 'parry' };
 }
 
-export function pickPassTarget(teammates, origin, aim, controlled, opponents = []) {
+export function pickPassTarget(teammates, origin, aim, controlled, opponents = [], { maxDistance = 45, preferredDistance = 17 } = {}) {
   let best = -1, bestScore = -Infinity;
   for (const player of teammates) {
     if (!player.home || player.keeper || player.index === controlled) continue;
     const dx = player.x - origin.x, dz = player.z - origin.z;
     const distance = Math.hypot(dx, dz);
-    if (distance < 2 || distance > 45) continue;
+    if (distance < 2 || distance > maxDistance) continue;
     const alignment = (dx * aim.x + dz * aim.z) / distance;
     if (alignment < 0.18) continue;
     // Among similarly aimed teammates prefer a free lane and an unmarked
@@ -160,8 +160,24 @@ export function pickPassTarget(teammates, origin, aim, controlled, opponents = [
       const marked = Math.hypot(opponent.x - player.x, opponent.z - player.z);
       pressure = Math.max(pressure, clamp((2.4 - marked) / 2.4, 0, 1));
     }
-    const score = alignment * 4 - Math.abs(distance - 17) * 0.035 - pressure * 1.2;
+    const score = alignment * 4 - Math.abs(distance - preferredDistance) * 0.08 - pressure * 1.2;
     if (score > bestScore) { best = player.index; bestScore = score; }
   }
   return best;
+}
+
+export function groundPassProfile(power = 0) {
+  const charge = clamp(power, 0, 1);
+  return { speed: 8 + 18 * charge, range: 7 + 35 * charge };
+}
+
+export function slideHeading(input, player, ball) {
+  if (Math.hypot(input.x, input.z) > .2) return Math.atan2(input.z, input.x);
+  const distance = Math.hypot(ball.x - player.x, ball.z - player.z);
+  return distance > .05 && distance < 5 ? Math.atan2(ball.z - player.z, ball.x - player.x) : player.heading;
+}
+
+export function skillTurn(progress) {
+  const t = clamp(progress, 0, 1);
+  return 2 * Math.PI * t * t * (3 - 2 * t);
 }

@@ -35,3 +35,13 @@ test('close gameplay camera follows either carrier at both touchlines and enlarg
  const loose=gameplayFraming({ball:{x:12,y:.11,z:-14},velocity:{x:20,z:-20},width:44.5,length:71,aspect:2});
  assert.equal(loose.focus.x,14.8);assert.equal(loose.focus.z,-15.8);
 });
+
+test('closer camera keeps high balls visible instead of aiming at ground below them', async()=>{
+ const {gameplayFraming}=await import('../src/camera.js');
+ for(const y of [8,18,22])for(const zoom of [1,1.25]){
+  const frame=gameplayFraming({ball:{x:34,y,z:12},velocity:{x:15,z:0},width:45,length:71,aspect:844/390});
+  const cam=new PerspectiveCamera(42,844/390,.1,400);cam.zoom=zoom;cam.updateProjectionMatrix();
+  cam.position.copy(frame.position);cam.lookAt(frame.focus);cam.updateMatrixWorld();
+  const p=new Vector3(34,y,12).project(cam);assert.ok(Math.abs(p.x)<.8&&p.y<.59&&p.y>-.7);
+ }
+});

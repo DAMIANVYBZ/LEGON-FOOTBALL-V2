@@ -41,7 +41,9 @@ async def main(first_half=False):
   # Use the real keyboard mapping and the actual pass/control transfer loop.
   await page.evaluate("window.__footballDebug.scenario({ball:[.68,.11,0],owner:5,players:[{index:5,x:0,z:0},{index:6,x:12,z:0}]})")
   await page.keyboard.press('Escape')
-  await page.keyboard.press('s')
+  await page.keyboard.down('s')
+  await page.wait_for_function('window.__footballDebug.snapshot().input.power >= .22',timeout=15000)
+  await page.keyboard.up('s')
   await page.keyboard.press('Escape')
   passed=await page.evaluate("(()=>{const d=window.__footballDebug; const start=d.snapshot();d.step(1.5);return {target:start.passTarget,startVelocity:start.velocity,end:d.snapshot().possessor,events:d.snapshot().events,ball:d.snapshot().ball,velocity:d.snapshot().velocity,receiver:d.snapshot().players[6]}})()")
   print('PASS: keyboard pass and receiver control transfer',flush=True)

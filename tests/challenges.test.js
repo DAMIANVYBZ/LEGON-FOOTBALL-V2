@@ -35,3 +35,10 @@ test('defenders contain or go around a shield before attempting an exposed ball'
  const support=defensiveApproach({x:2,z:1},carrier,ball,{goalX:35,primary:false});
  assert.ok(support.x>1.5&&support.z>.5,'support contains goal-side');
 });
+
+test('gentle standing body contact is not a foul but a forceful body-first slide is',()=>{
+ const carrier={x:.65,z:0,vx:0,vz:0},ball={x:1.33,y:.11,z:0};
+ assert.equal(assessChallenge({x:0,z:0,vx:2,vz:0},carrier,ball).foul,false);
+ assert.equal(assessChallenge({x:0,z:0,vx:4,vz:0},carrier,ball).foul,true);
+ assert.equal(assessChallenge({x:0,z:0,vx:5.5,vz:0},carrier,ball,{style:'slide'}).card,'red');
+});

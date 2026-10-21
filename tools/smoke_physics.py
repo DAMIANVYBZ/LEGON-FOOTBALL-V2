@@ -41,7 +41,7 @@ async def development_checks(page):
       // Opponents block the straight lane; a nearby diagonal receiver is free.
       d.scenario({ball:[.68,.11,0],owner:5,players:[...players,
         {index:5,x:0,z:0},{index:6,x:15,z:0},{index:4,x:15,z:5},{index:10,x:7,z:0}]});
-      d.aim({x:1,z:0}); d.press('j'); d.release('j'); d.aim(null);
+      d.aim({x:1,z:0}); d.press('j'); d.step(.3); d.release('j'); d.aim(null);
       if (d.snapshot().passTarget !== 4) throw Error('Pass assistance ignored the blocked lane');
       // A receiver must approach and control short, medium and longer passes.
       // Run the real movement, ball physics and possession-transfer loop.
@@ -49,7 +49,7 @@ async def development_checks(page):
       for (const distance of [5, 12, 24]) {
         d.scenario({ball:[.68,.11,0],owner:5,players:[...players,
           {index:5,x:0,z:0},{index:6,x:distance,z:0}]});
-        d.aim({x:1,z:0}); d.press('j'); d.release('j'); d.aim(null);
+        d.aim({x:1,z:0}); d.press('j'); d.step(Math.max(.06,(distance-7)/35*1.2)); d.release('j'); d.aim(null);
         if(d.snapshot().passTarget!==6) throw Error('Wrong receiver at '+distance+'m');
         let state=d.snapshot();
         for(let i=0;i<240 && state.possessor!==6;i++) {d.step(1/60);state=d.snapshot();}

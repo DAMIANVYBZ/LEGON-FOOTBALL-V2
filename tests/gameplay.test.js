@@ -275,3 +275,30 @@ test('off-ball attacking support waits behind the offside line in both direction
   assert.ok(target.x*sign<15);
  }
 });
+
+test('pass charge increases speed and reach and selects a farther aligned receiver', async () => {
+ const { groundPassProfile, pickPassTarget }=await import('../src/gameplay.js');
+ const short=groundPassProfile(.1),long=groundPassProfile(.9);
+ assert.ok(long.speed>short.speed*2);assert.ok(long.range>short.range*2);
+ const players=[{index:1,home:true,x:8,z:0},{index:2,home:true,x:32,z:0}];
+ for(const [charge,expected] of [[short,1],[long,2]])
+  assert.equal(pickPassTarget(players,{x:0,z:0},{x:1,z:0},5,[],{maxDistance:charge.range+3,preferredDistance:charge.range}),expected);
+});
+test('full and controlled sprint are distinct from normal dribbling', () => {
+ const speeds=[];
+ for(const options of [{},{sprint:true,controlledSprint:true},{sprint:true}]) {
+  const state={x:0,z:0,vx:0,vz:0,heading:0};
+  for(let i=0;i<120;i++)advancePlayer(state,{x:1,z:0},1/60,{dribbling:true,...options});
+  speeds.push(state.vx);
+ }
+ assert.ok(speeds[1]>speeds[0]+1);assert.ok(speeds[2]>speeds[1]+1);
+});
+test('slide uses the stick direction or a nearby ball rather than a stale facing', async()=>{
+ const {slideHeading,skillTurn}=await import('../src/gameplay.js');
+ const player={x:0,z:0,heading:0};
+ assert.equal(slideHeading({x:0,z:1},player,{x:2,z:0}),Math.PI/2);
+ assert.equal(slideHeading({x:0,z:0},player,{x:-2,z:0}),Math.PI);
+ assert.equal(slideHeading({x:0,z:0},player,{x:-20,z:0}),0);
+ assert.equal(skillTurn(0),0);assert.equal(skillTurn(1),2*Math.PI);
+ assert.ok(skillTurn(.01)<.01);assert.ok(skillTurn(.5)>3&&skillTurn(.5)<3.2);
+});

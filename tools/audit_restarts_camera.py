@@ -24,7 +24,7 @@ RULES=r'''()=>{
  });
  test('reckless body-first slide still produces a foul and red card',()=>{
   d.scenario({ball:[2.28,.11,0],owner:12,players:[...far,{index:5,x:.2,z:0},{index:12,x:1.6,z:0,heading:0,downFor:3}]});
-  d.tackle('slide');const s=d.snapshot();expect(s.restart?.type==='freeKick'&&!s.restart.home,'missing foul restart');expect(s.players[5].sentOff,'reckless slide not sanctioned');
+  d.tackle('slide');d.step(.7);const s=d.snapshot();expect(s.restart?.type==='freeKick'&&!s.restart.home,'missing foul restart');expect(s.players[5].sentOff,'reckless slide not sanctioned');
  });
  for(const type of ['freeKick','indirectFreeKick','corner','goalKick']){
   test(type+' short pass stays on ground and travels toward receiver',()=>{

@@ -16,7 +16,7 @@ CHECKS=r'''spec=>{
  test('home offside is recorded at kick and penalised on involvement',()=>{
   fresh({ball:[5.68,.11,0],owner:5,players:[...far,{index:5,x:5,z:0},{index:6,x:20,z:0},
    ...[8,9,10,11,12,13].map(index=>({index,x:15,z:15,downFor:10})),{index:7,x:G-1,z:0}]});
-  d.aim({x:1,z:0});d.press('j');d.release('j');d.aim(null);
+  d.aim({x:1,z:0});d.press('j');d.step(.3);d.release('j');d.aim(null);
   const phase=d.snapshot().offside;expect(phase?.candidates.includes(6),'receiver not tracked at kick');
   const before=d.snapshot().events.offsides||0;
   for(let i=0;i<180&&(d.snapshot().events.offsides||0)===before;i++)d.step(1/60);
@@ -35,7 +35,7 @@ CHECKS=r'''spec=>{
   for(const type of ['goalKick','corner']) {
    fresh({ball:[0,.11,0],owner:5,players:far});
    d.restart(type,true,type==='goalKick'?{x:-G+5,z:0}:{x:G-.4,z:spec.width/2-.4});
-   d.step(.5);d.aim({x:1,z:0});d.press('j');d.release('j');d.aim(null);
+   d.step(.5);d.aim({x:1,z:0});d.press('j');d.step(.3);d.release('j');d.aim(null);
    // Corners enter the set-piece runup; goal kicks use the ordinary kick.
    d.step(1);
    expect(!d.snapshot().offside,'direct exempt restart created offside phase');

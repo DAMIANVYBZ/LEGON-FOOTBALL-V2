@@ -233,3 +233,16 @@ in Chromium produced correct context/score captions and preferred an advertised
 male voice over the female default with no JavaScript errors. Browser speech was
 stubbed to inspect selection and timing; this does not assess audible naturalness
 or the voices installed on the user's device. Replay: tools/check_commentary.py.
+
+## Controller menus, pass charge, slides and spin — 2026-10-21
+
+User requested eight corrections: gamepad halftime/fulltime menus, soft fouls,
+unseen goal kicks, slide direction/positioning, charged pass speed/range, a slower
+connected spin, R1/R2 sprint speeds, and falls occurring before slide contact.
+Implemented and checked these behaviors; see
+[controller/gameplay corrections](controller-gameplay-fixes.md) for timings,
+measurements, fixtures and limitations. 86 unit tests and the build pass, the
+focused controller replay passes, and all 41 legacy fixture groups plus a full
+match pass. Production controls are checked on desktop and emulated landscape
+phone. The user also asked to open the in-chat browser; this session has no such
+interactive panel, so show browser screenshots and explain that limitation.
