@@ -13,7 +13,7 @@ import { createRandom, keeperPosition, saveOutcome, shotOnGoal } from './keeper.
 import { bestPassOption, decideCarrier, markingAssignments } from './cpuBrain.js';
 import { createMatchAudio } from './audio.js';
 import { matchKits, teamShort } from './teams.js';
-import { createCommentary, resultLine, scoreLine } from './commentary.js';
+import { createCommentary, resultLine, scoreLine, goalContext } from './commentary.js';
 import { playerName } from './players.js';
 import { vibrate } from './haptics.js';
 import { flight, groundPassSpeed, liftFor } from './ballistics.js';
@@ -1235,7 +1235,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       nextKickoffHome = !homeScored; // the side that conceded kicks off
       goals[homeScored ? 0 : 1]++;
       const scorer = lastShooter >= 0 && people[lastShooter].home === homeScored ? who(lastShooter) : '';
-      say('goal', { team: hallName(homeScored), who: scorer, score: scoreLine(hallName(true), hallName(false), goals) });
+      say('goal', { team: hallName(homeScored), who: scorer, goalMoment: goalContext(goals, homeScored), score: scoreLine(hallName(true), hallName(false), goals) });
       // The scorer and the nearest teammate celebrate; everyone else waits.
       const scorers = people.filter(p => p.home === homeScored && !p.keeper)
         .sort((a, b) => a.mesh.position.distanceToSquared(ball.position) - b.mesh.position.distanceToSquared(ball.position)).slice(0, 2);
@@ -2193,7 +2193,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       disposed = true; observer.disconnect();
       if (import.meta.env.DEV) delete window.__footballDebug;
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur);
-      physics?.free(); sound.dispose(); commentary.stop(); clearTimeout(captionTimer);
+      physics?.free(); sound.dispose(); commentary.dispose(); clearTimeout(captionTimer);
       window.removeEventListener('pointerdown', unlockSpeech); window.removeEventListener('keydown', unlockSpeech);
       host.removeChild(renderer.domElement); renderer.dispose(); engine.current = null;
     };

@@ -208,3 +208,28 @@ texture/normal maps instead of discarding facial and clothing detail. Existing
 mesh geometry is retained. User wants Netlify retained for now; publishing remains
 authorized through main, but a Netlify live result cannot be verified directly
 from this environment.
+
+## More lively commentary and male voice preference
+
+User requests a male commentator and more interesting delivery. Fixed the voice
+selector: `/male/` also matched "female", and "Google UK" selected either gender.
+Now prefer identified male English voices, ranking natural/neural/enhanced voices
+and regional English varieties. The browser speech API has no standard gender
+field: names identify known voices; when no male voice is installed, use the
+available device fallback. Do not promise the same voice across phones/computers
+or describe synthetic/stub tests as listening to real commentary.
+
+Delivery has a lower base pitch and quicker excited calls without a high-pitched
+jump. Goals distinguish openers, equalisers, taking/extending a lead and pulling
+one back while still trailing. Shots and saves interrupt routine chatter. Shorter
+shot/save cooldowns avoid suppressing separate chances for ten seconds. Queued
+reactions expire, and cancelled utterance callbacks cannot resume stale lines.
+Dispose speech listeners and guards when leaving a match. Reword repetitive lines
+and remove unsupported claims that a generic foul was from behind, woodwork was
+specifically the bar, or a generic miss was over the bar.
+
+Validation: 81 unit tests and production build pass. Five physical goal crossings
+in Chromium produced correct context/score captions and preferred an advertised
+male voice over the female default with no JavaScript errors. Browser speech was
+stubbed to inspect selection and timing; this does not assess audible naturalness
+or the voices installed on the user's device. Replay: tools/check_commentary.py.
