@@ -1342,7 +1342,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     function blur() { clearInput(); }
     const unlockSpeech = () => commentary.unlock();
-    window.addEventListener('pointerdown', unlockSpeech, { once: true }); window.addEventListener('keydown', unlockSpeech, { once: true });
+    const speechGestures = ['touchend', 'click', 'keydown'];
+    speechGestures.forEach(type => window.addEventListener(type, unlockSpeech));
     window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
     window.addEventListener('blur', blur);
 
@@ -2652,7 +2653,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       physics?.free(); sound.dispose(); commentary.dispose(); clearTimeout(captionTimer);
       disposeStadiumGrass();
       if (stadiumGrass) { stadiumGrass.map.dispose(); stadiumGrass.bumpMap.dispose(); stadiumGrass.dispose(); }
-      window.removeEventListener('pointerdown', unlockSpeech); window.removeEventListener('keydown', unlockSpeech);
+      speechGestures.forEach(type => window.removeEventListener(type, unlockSpeech));
       host.removeChild(renderer.domElement); renderer.dispose(); engine.current = null;
     };
   }, [config.home, config.away, config.formation, config.venueId, config.difficulty, config.device, cameraMode, kits.home, kits.away, isTouch, passingAssistance, preferences.keyboard, preferences.gamepad]);

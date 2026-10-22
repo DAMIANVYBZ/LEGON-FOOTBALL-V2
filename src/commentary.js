@@ -70,14 +70,36 @@ const GOAL_MOMENTS = {
 
 // Voice names have no standard gender field. Prefer explicitly identified male
 // English voices; importantly, 'female' must never satisfy a 'male' substring.
-export function chooseCommentaryVoice(voices = []) {
+export function chooseCommentaryVoice(voices = [], { preferLocal = false } = {}) {
   const english = voices.filter(v => /^en(?:-|$)/i.test(v.lang));
   const male = v => /\bmale\b|\b(daniel|david|george|ryan|guy|christopher|james|thomas|arthur|oliver|alex|fred|ralph|bruce|roger|eric|mark|reed|aaron|brian|andrew|adam|benjamin|nathan|william|ewan|alfie|elliot|ethan|finn|noah|ian|jacob|sean|tony)\b/i.test(v.name)
     && !/female|\bwoman\b/i.test(v.name);
   const region = v => /en-(GB|GH|NG|ZA|KE)/i.test(v.lang);
-  const quality = v => (region(v) ? 2 : 0) + (/natural|neural|enhanced|premium|google/i.test(v.name) ? 3 : 0);
+  const quality = v => (preferLocal && v.localService ? 10 : 0) + (region(v) ? 2 : 0) + (/natural|neural|enhanced|premium|google/i.test(v.name) ? 3 : 0);
   return english.filter(male).sort((a, b) => quality(b) - quality(a))[0]
     || english.find(v => v.default) || english[0] || null;
+}
+
+const phoneVoice = () => ({ preferLocal: (globalThis.navigator?.maxTouchPoints || 0) > 0 });
+let welcomeUtterance = null;
+
+// Called synchronously by the Kick Off/Play click, before React mounts a match
+// and loads its assets. Mobile speech needs a real line in that user gesture;
+// a silent blank utterance does not reliably grant speech permission.
+export function primeCommentary() {
+  const synth = globalThis.speechSynthesis, Utterance = globalThis.SpeechSynthesisUtterance;
+  if (!synth || !Utterance || globalThis.navigator?.userActivation?.isActive === false) return;
+  try {
+    const line = new Utterance('Welcome to Legon football.');
+    const voice = chooseCommentaryVoice(synth.getVoices?.() || [], phoneVoice());
+    if (voice) line.voice = voice;
+    line.lang = voice?.lang || 'en-GB'; line.volume = 1; line.pitch = .9; line.rate = 1.04;
+    welcomeUtterance = line;
+    line.onend = line.onerror = () => { if (welcomeUtterance === line) welcomeUtterance = null; };
+    synth.cancel();
+    if (synth.paused) synth.resume?.();
+    synth.speak(line);
+  } catch { welcomeUtterance = null; }
 }
 
 export function goalContext([home, away], homeScored) {
@@ -110,13 +132,13 @@ const COOLDOWN = { shot: 1200, save: 1500, catch: 3000, punch: 1800, spill: 2000
 export function createCommentary({ enabled = true, onCaption = () => {}, now = () => performance.now() } = {}) {
   const synth = globalThis.speechSynthesis, Utterance = globalThis.SpeechSynthesisUtterance;
   let on = enabled, voice = null, speakingPriority = 0, lastSpokeAt = -Infinity;
-  let pending = null, unlocked = false, generation = 0, guard = null;
+  let pending = null, blocked = null, current = null, generation = 0, guard = null, lastUnlockAt = -Infinity;
   const last = {}, lastEventAt = {};
-  const chooseVoice = () => { voice = chooseCommentaryVoice(synth?.getVoices?.() || []); };
+  const chooseVoice = () => { voice = chooseCommentaryVoice(synth?.getVoices?.() || [], phoneVoice()); };
   chooseVoice(); synth?.addEventListener?.('voiceschanged', chooseVoice);
 
   function cancelSpeech() {
-    generation++; clearTimeout(guard); guard = null; speakingPriority = 0;
+    generation++; clearTimeout(guard); guard = null; speakingPriority = 0; current = null;
     synth?.cancel();
   }
   function speak(line) {
@@ -129,16 +151,27 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
     utterance.rate = line.excited ? 1.16 : 1.04;
     utterance.pitch = line.excited ? .98 : .9;
     utterance.volume = 1; speakingPriority = line.priority;
+    const active = { line, utterance, started: false }; current = active;
     let finished = false;
     const done = () => {
       if (finished || id !== generation) return;
-      finished = true; clearTimeout(guard); guard = null; speakingPriority = 0;
+      finished = true; clearTimeout(guard); guard = null; speakingPriority = 0; current = null;
       const next = pending; pending = null;
       if (on && next && now() - next.at < 1800) speak(next.line);
     };
-    guard = setTimeout(done, 1200 + line.text.length * 75);
-    utterance.onend = utterance.onerror = done;
-    synth.speak(utterance);
+    utterance.onstart = () => { if (id === generation) { active.started = true; blocked = null; } };
+    utterance.onend = done;
+    utterance.onerror = event => {
+      if (id !== generation) return;
+      if (!['canceled', 'interrupted'].includes(event.error)) blocked = { line, at: now() };
+      done();
+    };
+    guard = setTimeout(() => {
+      if (id === generation && !active.started) blocked = { line, at: now() };
+      done();
+    }, 1200 + line.text.length * 75);
+    try { synth.speak(utterance); }
+    catch { if (id === generation) blocked = { line, at: now() }; done(); }
   }
 
   return {
@@ -156,12 +189,18 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
       lastSpokeAt = time; lastEventAt[event] = time;
     },
     unlock() {
-      if (unlocked || !synth || !Utterance) return;
-      unlocked = true;
-      const silent = new Utterance(' '); silent.volume = 0; synth.speak(silent);
+      if (!on || !synth || !Utterance) return;
+      chooseVoice();
+      if (synth.paused) synth.resume?.();
+      // touchend and its synthetic click are one gesture: do not repeatedly
+      // cancel a line while the phone is still starting its voice service.
+      if (now() - lastUnlockAt < 250 || current?.started) return;
+      const retry = current ? { line: current.line, at: now() } : blocked;
+      if (!retry || now() - retry.at > 5000) { blocked = null; return; }
+      lastUnlockAt = now(); blocked = null; cancelSpeech(); speak(retry.line);
     },
-    setEnabled(value) { on = value; if (!value) { pending = null; cancelSpeech(); } },
-    stop() { pending = null; cancelSpeech(); },
-    dispose() { pending = null; on = false; cancelSpeech(); synth?.removeEventListener?.('voiceschanged', chooseVoice); },
+    setEnabled(value) { on = value; if (!value) { pending = blocked = null; cancelSpeech(); } },
+    stop() { pending = blocked = null; cancelSpeech(); },
+    dispose() { pending = blocked = null; on = false; cancelSpeech(); synth?.removeEventListener?.('voiceschanged', chooseVoice); },
   };
 }

@@ -596,3 +596,29 @@ grounded ball height. The procedural stadium fallback also renders correctly
 when its imported model is unavailable. No browser/shader errors were observed.
 Production build and Cloudflare dry-run packaging of 51 assets pass. Reports,
 rendered views and logs are in `/workspace/stadium-grass-audit/`.
+
+## 2026-10-22 — mobile commentary speech activation
+
+User reports commentary silent on phones. Startup spoke kickoff asynchronously
+after asset loading; the only unlock was a one-shot pointerdown that queued a
+silent blank and permanently considered permission unlocked. It could miss the
+Kick Off gesture entirely and could not retry a rejected utterance.
+
+Prime a real audible welcome synchronously from navigation to a game in the
+Kick Off/Quick Match/booking button's click, respecting commentary OFF. Use
+persistent touchend/click/keydown listeners inside the match, not pointerdown,
+and remove them on disposal. Retry a recent blocked or never-started actual
+line from a subsequent gesture, deduplicate a touch's synthetic click, retain
+utterances through playback, resume paused speech, and expire old reactions.
+Phone voice selection prefers an installed local male English voice when one
+is available; no remote speech service, credentials or audio downloads added.
+Caption-only behavior remains when Web Speech is absent.
+
+Verification: 138 unit tests pass, including real-word priming, rejected speech,
+repeat failed gestures, lazy voices, local male preference, suspended speech,
+muting and throwing speech engines. tools/audit_mobile_commentary.py passes
+landscape touch-browser startup, blocked in-match goal recovery on a later tap,
+and commentary OFF, with no JS errors. Its speech service deliberately stubs
+mobile gesture restrictions; this is NOT an audible physical-iPhone/Android
+check. Results: /workspace/playtest-artifacts/mobile-commentary/results.json .
+Production build and Cloudflare static asset dry run also pass.

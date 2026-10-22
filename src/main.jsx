@@ -5,6 +5,7 @@ import Game from './Game.jsx';
 import { activeGamepad, gamepadFamily, readGamepad } from './gamepad.js';
 import { DEFAULT_PREFERENCES, KEYBOARD_PRESETS, keyLabel, normalizePreferences, readPreferences, savePreferences } from './preferences.js';
 import { PASSING_MODES } from './passing.js';
+import { primeCommentary } from './commentary.js';
 import Landing from './Landing.jsx';
 import { DEFAULT_VENUE, VENUES, getVenue, hasVenue } from './venues.js';
 import { bookingRules, readDemoBookings, reserveDemoSlot, slotLabel, slotStarts } from './booking.js';
@@ -267,10 +268,11 @@ function App() {
       if (nextArrival) setArrivalVenueId(nextArrival);
       return;
     }
+    if (nextPage === 'game' && preferences.hud.commentary !== false) primeCommentary();
     window.history.pushState({ legonFootball: { page: nextPage, arrivalVenueId: nextArrival } }, '', window.location.href);
     setArrivalVenueId(nextArrival);
     setPage(nextPage);
-  }, [portrait]);
+  }, [portrait, preferences.hud.commentary]);
   useEffect(() => {
     const existing = window.history.state?.legonFootball;
     if (existing) {

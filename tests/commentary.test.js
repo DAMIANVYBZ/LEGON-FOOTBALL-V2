@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickLine, resultLine, scoreLine, chooseCommentaryVoice, createCommentary, goalContext } from '../src/commentary.js';
+import { pickLine, resultLine, scoreLine, chooseCommentaryVoice, createCommentary, primeCommentary, goalContext } from '../src/commentary.js';
 import { playerName, setPlayerNames } from '../src/players.js';
 
 test('score and result lines read like a commentator', () => {
@@ -83,4 +83,51 @@ test('stale reactions expire and separate shots are not silenced for ten seconds
  time=2100;synth.finish();assert.equal(synth.spoken.length,1,'stale save should be discarded');
  commentary.say('shot',{team:'Sarbah'});assert.equal(synth.spoken.length,2);
  commentary.setEnabled(false);time=10000;commentary.say('goal',{});assert.equal(synth.spoken.length,2);
+});
+
+
+test('kickoff priming speaks real words with volume instead of a silent blank', t => {
+ const synth=fakeSpeech(t);primeCommentary();const welcome=synth.spoken.at(-1);
+ assert.match(welcome.text,/Legon football/);assert.equal(welcome.volume,1);
+ assert.equal(welcome.voice.name,'Google UK English Male');welcome.onend();
+});
+
+test('a phone can retry real commentary after blocked speech and another failed gesture', t => {
+ const synth=fakeSpeech(t);let time=0;
+ const commentary=createCommentary({now:()=>time});t.after(()=>commentary.dispose());
+ commentary.say('kickoff',{venue:'Sarbah',home:'Commonwealth',away:'Sarbah'});
+ const first=synth.spoken.at(-1);first.onerror({error:'not-allowed'});
+ commentary.unlock();const second=synth.spoken.at(-1);
+ assert.notEqual(second,first);assert.equal(second.text,first.text);assert.equal(second.volume,1);
+ second.onerror({error:'not-allowed'});time=300;commentary.unlock();
+ const third=synth.spoken.at(-1);assert.notEqual(third,second);third.onstart();
+ const count=synth.spoken.length;time=800;commentary.unlock();assert.equal(synth.spoken.length,count,'gestures must not restart speaking lines');
+});
+
+test('delayed local voices are picked on retry and stale blocked reactions are dropped', t => {
+ const synth=fakeSpeech(t);let time=0;synth.getVoices=()=>[];
+ const commentary=createCommentary({now:()=>time});t.after(()=>commentary.dispose());
+ commentary.say('shot',{team:'Sarbah'});synth.spoken.at(-1).onerror({error:'voice-unavailable'});
+ const daniel={name:'Daniel',lang:'en-GB',localService:true};synth.getVoices=()=>[daniel];
+ commentary.unlock();assert.equal(synth.spoken.at(-1).voice,daniel);
+ synth.spoken.at(-1).onerror({error:'not-allowed'});const count=synth.spoken.length;
+ time=6000;commentary.unlock();assert.equal(synth.spoken.length,count,'old blocked shot must not play on a later tap');
+});
+
+test('phones prefer an installed male voice and resume speech without restarting it', t => {
+ const local={name:'Daniel',lang:'en-GB',localService:true};const online={name:'Microsoft Ryan Online (Natural)',lang:'en-GB',localService:false};
+ assert.equal(chooseCommentaryVoice([online,local],{preferLocal:true}),local);
+ const synth=fakeSpeech(t);let resumes=0;synth.resume=()=>{synth.paused=false;resumes++;};
+ const commentary=createCommentary();t.after(()=>commentary.dispose());
+ commentary.say('shot',{team:'Sarbah'});synth.spoken.at(-1).onstart();synth.paused=true;
+ commentary.unlock();assert.equal(resumes,1);assert.equal(synth.spoken.length,1);
+ commentary.setEnabled(false);commentary.unlock();assert.equal(synth.spoken.length,1);
+});
+
+test('a speech engine exception cannot crash play and can be retried on a tap', t => {
+ const synth=fakeSpeech(t);const speak=synth.speak;
+ synth.speak=()=>{throw new Error('voice unavailable');};
+ const commentary=createCommentary();t.after(()=>commentary.dispose());
+ assert.doesNotThrow(()=>commentary.say('shot',{team:'Sarbah'}));
+ synth.speak=speak;commentary.unlock();assert.equal(synth.spoken.length,1);
 });
