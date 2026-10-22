@@ -1,9 +1,10 @@
 # Receiving, throw-ins and goal presentation
 
-Receiving combines 60% normalized player input with 40% AI input. With no
-movement input the player gently approaches the incoming ball; a full movement
-away from it still takes priority. Assistance moves the player through the same
-acceleration/braking model as normal movement. It never pulls or teleports the
+Receiving combines 30% normalized player input with 70% AI input. With no
+movement input the player approaches the incoming ball automatically; manual
+input adjusts the approach while AI provides the stronger correction.
+Assistance moves the player through the same acceleration/braking model as
+normal movement. It never pulls or teleports the
 ball, grants possession at a distance, or changes first-touch eligibility.
 
 The intended receiver runs toward a forecast interception point. Before contact,
@@ -55,7 +56,7 @@ npm run build
 npm run deploy:check
 ```
 
-The receiving audit checks 60/40 assistance on desktop and phone for eight
+The receiving audit checks 30/70 assistance on desktop and phone for eight
 delivery types, including headers from crosses, small manual corrections,
 assistance stopping after contact, both throw-in touchlines, two power levels,
 and agreement between the guide and actual flight. The goal audit checks home

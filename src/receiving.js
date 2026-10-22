@@ -3,7 +3,7 @@ import { applySurfaceGrip } from './ballContact.js';
 import { BALL, surfaceFor } from './physicsConfig.js';
 import { receivingInput } from './gameplay.js';
 
-export const RECEIVING_ASSIST = 0.4;
+export const RECEIVING_ASSIST = 0.7;
 
 // A short forecast of the loose ball, including landing and rolling. This is
 // guidance for feet, never a force or position correction on the actual ball.
@@ -59,7 +59,7 @@ export function assistedReceivingInput(manual, player, target, pace) {
   const size = Math.max(1, Math.hypot(manual.x, manual.z));
   if (!target) return { x: manual.x / size, z: manual.z / size };
   // Scale the arriving controller to its share of the available pace so it
-  // still brakes close to the interception point. Strong manual input wins.
+  // still brakes close to the interception point. Manual input adjusts the approach.
   const ai = receivingInput({ x: target.x - player.x, z: target.z - player.z }, pace * RECEIVING_ASSIST);
   return { x: manual.x / size * (1 - RECEIVING_ASSIST) + ai.x * RECEIVING_ASSIST,
     z: manual.z / size * (1 - RECEIVING_ASSIST) + ai.z * RECEIVING_ASSIST };

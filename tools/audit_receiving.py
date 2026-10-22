@@ -29,7 +29,7 @@ RECEPTIONS=r'''()=>{
      const s=d.snapshot();
      if(s.receivingGuidance){
       guided++;early ||= s.possessor<0&&s.controlled===6;
-      if(s.receivingGuidance.amount!==.4)throw Error('assist weight changed');
+      if(s.receivingGuidance.amount!==.7)throw Error('assist weight changed');
       d.move(0,correction);
       if(samples.length<3)samples.push({t:s.elapsed-launch.elapsed,ball:s.ball,player:[s.players[6].x,s.players[6].z],target:s.receivingGuidance.target});
      }

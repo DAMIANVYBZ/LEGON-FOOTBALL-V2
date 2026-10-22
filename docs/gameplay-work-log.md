@@ -534,3 +534,14 @@ packaging of 51 assets pass. Detailed results are in
 Moving-pass regression also passes with full sides active, normal/R2/R1
 controller movement, keyboard sprint-pass and three-finger phone
 move+sprint+pass, with no browser errors.
+
+## 2026-10-22 — increase receiving assistance to 70%
+
+Increase the receiving movement blend from 40% AI / 60% manual to 70% AI / 30%
+manual. The same setting controls interception handoff readiness and receiving
+movement for passes, crosses, corners, free kicks, goal kicks and throw-ins.
+Update the receiving regression checks and current mechanics documentation.
+
+Verified: all 122 automated tests and 74 receiving/throw-in/gameplay browser
+checks pass across desktop and phone at the 70% setting; production build
+passes. Results are in `/workspace/receiving-70-audit/`.

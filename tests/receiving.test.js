@@ -7,17 +7,17 @@ import { flight, liftFor } from '../src/ballistics.js';
 import { createMatchPhysics } from '../src/matchPhysics.js';
 
 const field = { length: 71, width: 45 }, player = { x: 0, z: 0 };
-test('receiving is a 60/40 input blend, including diagonal and deliberate movement away', () => {
-  assert.equal(RECEIVING_ASSIST, 0.4);
+test('receiving is a 30/70 input blend, including diagonal and opposing manual input', () => {
+  assert.equal(RECEIVING_ASSIST, 0.7);
   const blended = assistedReceivingInput({ x: 0, z: 1 }, player, { x: 10, z: 0 }, 5.8);
-  assert.ok(Math.abs(blended.x - .4) < 1e-9 && Math.abs(blended.z - .6) < 1e-9);
-  assert.ok(Math.abs(assistedReceivingInput({ x: -1, z: 0 }, player, { x: 10, z: 0 }, 5.8).x + 0.2) < 1e-9);
+  assert.ok(Math.abs(blended.x - .7) < 1e-9 && Math.abs(blended.z - .3) < 1e-9);
+  assert.ok(Math.abs(assistedReceivingInput({ x: -1, z: 0 }, player, { x: 10, z: 0 }, 5.8).x - 0.4) < 1e-9);
   const diagonal = assistedReceivingInput({ x: -1, z: -1 }, player, { x: 10, z: 0 }, 5.8);
-  assert.ok(diagonal.x < 0 && Math.hypot(diagonal.x, diagonal.z) <= 1);
+  assert.ok(diagonal.x > 0 && diagonal.x < .7 && diagonal.z < 0 && Math.hypot(diagonal.x, diagonal.z) <= 1);
   assert.deepEqual(assistedReceivingInput({ x: 0.2, z: 0.3 }, player, null, 5.8), { x: 0.2, z: 0.3 });
 });
 
-test('40% idle assistance approaches and brakes at the receiving point at multiple frame rates', () => {
+test('70% idle assistance approaches and brakes at the receiving point at multiple frame rates', () => {
   for (const hz of [30, 60, 120]) {
     const p = { ...player, vx: 0, vz: 0, heading: 0 };
     let furthest = 0;
