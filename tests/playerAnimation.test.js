@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Object3D, AnimationMixer, AnimationClip, NumberKeyframeTrack } from 'three';
-import { transitionPlayerAction } from '../src/playerAnimation.js';
+import { groundedSlideClip, transitionPlayerAction } from '../src/playerAnimation.js';
 
 test('replaying an action does not flash back to the unanimated bind pose', () => {
  const root=new Object3D(),joint=new Object3D();joint.name='joint';root.add(joint);
@@ -14,6 +14,16 @@ test('replaying an action does not flash back to the unanimated bind pose', () =
   assert.equal(person.currentAction.getEffectiveWeight(),1);
   assert.equal(joint.position.y,1,'a repeat must not expose the zero-height rest pose');
  }
+});
+
+test('the slide holds its low pose through follow-through without changing the cached source', () => {
+ const source = new AnimationClip('source', 2.7, [new NumberKeyframeTrack('joint.position[y]', [0, .3, .6, 1, 1.2, 2.7], [1, .8, .7, .4, .2, 1])]);
+ const before = Array.from(source.tracks[0].values), clip = groundedSlideClip(source);
+ const root = new Object3D(), joint = new Object3D(); joint.name = 'joint'; root.add(joint);
+ const mixer = new AnimationMixer(root); mixer.clipAction(clip).play();
+ mixer.setTime(.6); assert.ok(Math.abs(joint.position.y - .2) < 1e-6);
+ mixer.setTime(1); assert.ok(Math.abs(joint.position.y - .2) < 1e-6);
+ assert.deepEqual(Array.from(source.tracks[0].values), before);
 });
 test('different moves blend continuously and slower recovery keeps its full duration', () => {
  const root=new Object3D(),joint=new Object3D();joint.name='joint';root.add(joint);

@@ -46,12 +46,12 @@ async def main(first_half=False):
     if(!(passes[2].speed>passes[1].speed+5&&passes[1].speed>passes[0].speed+5))throw Error('pass charge not affecting speed');checks.passes=passes;
     // Hold the carrier stationary in this fixture (downFor locks AI motion).
     // A sideways input must aim sideways. The visible fall must wait for contact.
-    fresh({ball:[0,.11,1],owner:12,players:[...far,{index:5,x:0,z:0,heading:0},{index:12,x:0,z:1.6,heading:-Math.PI/2,downFor:30}]});
-    d.move(0,1);d.tackle('slide');const pressed=d.snapshot();
+    fresh({ball:[0,.11,1],owner:12,players:[...far,{index:5,x:0,z:0,heading:0},{index:12,x:0,z:1.6,heading:-Math.PI/2,freezeFor:30}]});
+    d.step(.35);d.move(0,1);d.tackle('slide');const pressed=d.snapshot();
     if(pressed.players[12].action==='fallen')throw Error('victim fell on button press');
-    if(Math.abs(pressed.players[5].heading-Math.PI/2)>.01)throw Error('wrong slide direction');
-    const before=pressed.events.tackles;d.step(.4);const early=d.snapshot();
-    if(early.events.tackles!==before||early.players[12].action==='fallen')throw Error('slide contact before windup');
+    if(Math.abs(pressed.players[5].heading-Math.PI/2)>.23)throw Error('wrong slide direction');
+    const before=pressed.events.tackles;d.step(.1);const early=d.snapshot();
+    if(early.events.tackles!==before||early.players[12].action==='fallen')throw Error('slide contact before the boot reached the ball');
     d.step(.55);const contact=d.snapshot();
     if(contact.events.tackles<=before)throw Error('slide did not reach exposed ball '+JSON.stringify({ball:contact.ball,player:contact.players[5],carrier:contact.players[12],restart:contact.restart,events:contact.events,sliding:contact.sliding}));
     checks.slide={pressed,early,contact};

@@ -21,11 +21,12 @@ import { aimShot, aimChip, gaussian, SHOT_STYLES, spinStyle, stickZone } from '.
 import { createOffsideTracker, offsidePositions, offsideInterference, goalCrossing } from './rules.js';
 import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.js';
 import { playerMaterial } from './playerMaterial.js';
-import { transitionPlayerAction } from './playerAnimation.js';
+import { groundedSlideClip, transitionPlayerAction } from './playerAnimation.js';
+import { slideAim, slideVelocity, slideBallContact, slideDeflection, sweepContact, slideVerdict, slideApproachSpeed } from './sliding.js';
 import { createBallControl, footTouch, controlStrideLimit, controlStrideInput, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
-import { plantControlFoot } from './footPlant.js';
+import { plantControlFoot, placeSlideFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
-import { advancePlayer, goalKickPosition, groundPassProfile, groundPassVelocity, slideHeading, skillTurn, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
+import { advancePlayer, goalKickPosition, groundPassProfile, groundPassVelocity, skillTurn, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
 
 const BALL_RADIUS = 0.11;
 const clipsToLoad = {
@@ -432,7 +433,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         : name === 'spin' ? 1.25 : name === 'tackleAlternate' || name === 'tackle' ? SLIDE_TIMING.animation
         : name === 'stand' ? SLIDE_TIMING.getUp : name === 'fallen' ? 1.1 : name.startsWith('goalkeeper') ? 0.8 : 0.55);
       const contactPhase = strike && (name === 'pass' || name === 'kick') ? 0.28 : 0;
-      transitionPlayerAction(person, clip, { once, duration, natural, fade: contactPhase ? 0.03 : 0.17, startPhase: contactPhase });
+      transitionPlayerAction(person, clip, { once, duration, natural, fade: contactPhase ? 0.03 : name === 'tackleAlternate' ? .08 : .17, startPhase: contactPhase });
       person.actionName = name;
       person.actionUntil = once ? elapsed + duration * (1 - contactPhase) : 0;
     }
@@ -454,8 +455,37 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         return { x: footPoint.x, y: footPoint.y, z: footPoint.z };
       });
     }
+    function slideBodyOf(person) {
+      if (!person.hipBone) return { x: person.motion.x, y: .85, z: person.motion.z };
+      person.hipBone.getWorldPosition(footPoint);
+      return { x: footPoint.x, y: footPoint.y, z: footPoint.z };
+    }
+    function legsOf(person) {
+      return (person.footBones || []).flatMap(toe => {
+        const joints = [toe, toe.parent, toe.parent?.parent, toe.parent?.parent?.parent].filter(Boolean).map(bone => {
+          bone.getWorldPosition(footPoint); return { x: footPoint.x, y: footPoint.y, z: footPoint.z };
+        });
+        const points = [];
+        for (let joint = 0; joint < joints.length - 1; joint++) {
+          const from = joints[joint], to = joints[joint + 1];
+          // Fixed subdivisions keep correspondence between ticks while
+          // covering the ankle, shin and thigh, not just their endpoints.
+          for (let sample = 0; sample < 4; sample++) points.push({ x: from.x + (to.x - from.x) * sample / 4,
+            y: from.y + (to.y - from.y) * sample / 4, z: from.z + (to.z - from.z) * sample / 4 });
+        }
+        points.push(joints.at(-1)); return points;
+      });
+    }
     function animatePlayers(dt) {
       mixers.forEach(mixer => mixer.update(dt));
+      for (const person of people) if (elapsed < (person.slideRecoveryUntil || 0)) poseSlidePlayer(person, 1);
+      for (const person of people) if (person.slideStandAt && elapsed < person.slideStandAt + SLIDE_TIMING.getUp) {
+        poseSlidePlayer(person, 1, (elapsed - person.slideStandAt) / SLIDE_TIMING.getUp);
+      }
+      if (sliding && !restart && !pendingRestart && !resetAt) {
+        poseSlidePlayer(sliding, elapsed - slideStartedAt);
+        resolveSlide(dt);
+      }
       const owner = possessor >= 0 ? possessor : awayCarrier;
       if (restart || keeperHolding >= 0 || owner < 0) return;
       const person = people[owner];
@@ -467,6 +497,21 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         return !best || gap < best.gap ? { toe, gap } : best;
       }, null);
       if (nearest) plantControlFoot(nearest.toe, ball.position);
+    }
+    function poseSlidePlayer(person, age, standing = 0) {
+      const forward = forwardFromHeading(person.motion.heading), amount = clamp((age - .06) / .18, 0, 1);
+      if (age < .12) {
+        const side = (ball.position.x - person.motion.x) * -forward.z + (ball.position.z - person.motion.z) * forward.x;
+        if (Math.abs(side) > .03) person.slideState.foot = side < 0 ? 0 : 1;
+      }
+      (person.footBones || []).forEach((toe, index) => {
+        const extended = index === person.slideState.foot, side = index === 0 ? -1 : 1;
+        const stand = clamp(standing * 1.6, 0, 1), blend = stand * stand * (3 - 2 * stand);
+        const ahead = (extended ? .78 : .02) * (1 - blend) + .1 * blend;
+        const across = side * ((extended ? .12 : .3) * (1 - blend) + .18 * blend);
+        placeSlideFoot(toe, { x: person.motion.x + forward.x * ahead - forward.z * across,
+          y: .06, z: person.motion.z + forward.z * ahead + forward.x * across }, amount * clamp((1 - standing) * 4, 0, 1));
+      });
     }
     function inputDirection() {
       const dx = Number(keys.has(keyboard.right)) - Number(keys.has(keyboard.left)) + touchAxis.x + padAxis.x;
@@ -990,17 +1035,25 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       action(player, 'spin', true);
     }
     function tackle(move = 'tackle', style = 'standing') {
-      if (keeperHolding >= 0) return;
+      if (keeperHolding >= 0 || restart || pendingRestart || resetAt) return;
       const player = people[controlled];
       if (elapsed < player.nextTackleAt || sliding || elapsed < (player.downUntil || 0)) return;
       const slide = style === 'slide';
       player.nextTackleAt = elapsed + (slide ? 1.5 : style === 'hard' ? 1.1 : 0.85);
       if (slide) {
-        player.motion.heading = slideHeading(inputDirection(), player.motion, ball.position);
+        player.motion.heading = slideAim(inputDirection(), player.motion, ball.position, ballVelocity);
         slideStartedAt = elapsed;
         action(player, 'tackleAlternate', true);
         player.mesh.rotation.y = meshYawForHeading(player.motion.heading);
-        player.motion.vx = 0; player.motion.vz = 0;
+        const forward = forwardFromHeading(player.motion.heading);
+        const side = (ball.position.x - player.motion.x) * -forward.z + (ball.position.z - player.motion.z) * forward.x;
+        player.slideState = { initial: { x: player.motion.vx, z: player.motion.vz }, foot: side <= 0 ? 0 : 1,
+          feet: feetOf(player), ball: ball.position.clone(),
+          targetFeet: people.map(legsOf),
+          targetBodies: people.map(slideBodyOf),
+          body: slideBodyOf(player), ballWon: false, bodyHits: [], contacts: [] };
+        pendingKick = null; pendingShot = null; skill = null;
+        if (possessor === controlled) { possessor = -1; controlLockUntil = elapsed + .15; }
         slideUntil = elapsed + SLIDE_TIMING.animation; sliding = player;
         player.slideDecided = false; player.downUntil = slideUntil + SLIDE_TIMING.missedRecovery;
         return;
@@ -1012,22 +1065,96 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       player.motion.vx = 0; player.motion.vz = 0;
       const hold = player.slideDecided ? 0 : SLIDE_TIMING.groundHold;
       player.downUntil = elapsed + hold + SLIDE_TIMING.getUp;
-      action(player, hold ? 'fallen' : 'stand', true);
+      if (hold) {
+        // Keep the grounded slide pose rather than blend into the unrelated
+        // fallen-idle clip, which lifts the legs back into the air.
+        player.actionName = 'fallen'; player.currentAction.paused = true;
+        player.slideRecoveryUntil = elapsed + hold;
+      } else { action(player, 'stand', true); player.slideStandAt = elapsed; }
       player.actionUntil = elapsed + (hold || SLIDE_TIMING.getUp);
       player.getUpAt = hold ? player.actionUntil : 0;
     }
-    // One attempt to win the ball. A slide keeps trying while the lunge
-    // travels (see simulate), so it reaches a carrier a few metres away.
-    // Returns true once the challenge is decided.
-    function challenge(player, style) {
-      const slide = style === 'slide', hard = style === 'hard';
-      let reach = player.mesh.position;
-      if (slide) {
-        const forward = forwardFromHeading(player.motion.heading);
-        reach = player.mesh.position.clone().add(new THREE.Vector3(forward.x * 0.9, 0, forward.z * 0.9));
+    // Resolve the actual posed boots after the animation and movement for this
+    // tick. A clean poke and a subsequent trip are separate ordered contacts.
+    function resolveSlide(dt) {
+      const player = sliding, data = player.slideState, feet = feetOf(player);
+      const age = elapsed - slideStartedAt;
+      const body = slideBodyOf(player);
+      const targetFeet = people.map(legsOf);
+      const targetBodies = people.map(slideBodyOf);
+      if (age > 0) {
+        const ballHit = !data.ballWon ? slideBallContact(data.feet, feet, data.ball, ball.position) : null;
+        const hits = [];
+        people.forEach((opponent, index) => {
+          if (opponent.home === player.home || opponent.sentOff || data.bodyHits.includes(index)) return;
+          let time = sweepContact(data.body, body, data.targetBodies[index], targetBodies[index], .5);
+          let target = targetBodies[index];
+          const contactTarget = (from, to, t) => ({ x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t });
+          for (let foot = 0; foot < feet.length; foot++) {
+            const t = sweepContact(data.feet[foot] || feet[foot], feet[foot], data.targetBodies[index], targetBodies[index], .32);
+            if (t !== null && (time === null || t < time)) { time = t; target = contactTarget(data.targetBodies[index], targetBodies[index], t); }
+          }
+          for (let leg = 0; leg < targetFeet[index].length; leg++) {
+            const legNow = targetFeet[index][leg], legBefore = data.targetFeet[index]?.[leg] || legNow;
+            const bodyTime = sweepContact(data.body, body, legBefore, legNow, .32);
+            if (bodyTime !== null && (time === null || bodyTime < time)) { time = bodyTime; target = contactTarget(legBefore, legNow, bodyTime); }
+            for (let foot = 0; foot < feet.length; foot++) {
+              const t = sweepContact(data.feet[foot] || feet[foot], feet[foot], legBefore, legNow, .2);
+              if (t !== null && (time === null || t < time)) { time = t; target = contactTarget(legBefore, legNow, t); }
+            }
+          }
+          if (time !== null) hits.push({ opponent, index, time, target });
+        });
+        hits.sort((a, b) => a.time - b.time);
+        for (const first of hits) {
+          const speed = slideApproachSpeed(player.motion, { ...first.opponent.motion, ...first.target });
+          const verdict = slideVerdict(ballHit?.time ?? null, first.time, data.ballWon, speed);
+          if (verdict.foul) {
+            data.contacts.push({ type: 'foul', at: elapsed, speed, card: verdict.card });
+            player.slideDecided = true; sliding = null; recoverSlide(player);
+            foul(first.opponent.home, first.opponent, player, verdict.card);
+            return;
+          }
+        }
+        if (ballHit) {
+          const index = people.indexOf(player);
+          if (ruleTouch(index, { deliberate: true })) { sliding = null; recoverSlide(player); return; }
+          const oldFoot = data.feet[ballHit.index] || feet[ballHit.index], foot = feet[ballHit.index];
+          const footVelocity = { x: (foot.x - oldFoot.x) / dt, z: (foot.z - oldFoot.z) / dt };
+          const contactBall = data.ball.clone().lerp(ball.position, ballHit.time);
+          const deflection = slideDeflection(ballVelocity, footVelocity, ballHit.point, contactBall, player.motion.heading);
+          ballVelocity.set(deflection.velocity.x, deflection.velocity.y, deflection.velocity.z); spinBall(deflection.spin);
+          // Let the struck ball leave the tackler and the previous carrier's
+          // approximate body capsules before normal collision resumes.
+          physics?.releaseFrom(awayCarrier >= 0 ? awayCarrier : index);
+          awayCarrier = possessor = passTarget = awayPassTarget = -1;
+          passDestination = awayPassDestination = null; pendingKick = null; carryOwner = -1;
+          lastTouchHome = player.home; controlLockUntil = Math.max(controlLockUntil, elapsed + .3);
+          awayKickUntil = Math.max(awayKickUntil, elapsed + .3);
+          data.ballWon = true; player.slideDecided = true; events.tackles++; count('slide boot contacts');
+          data.contacts.push({ type: 'ball', at: elapsed, foot: ballHit.point, ball: contactBall.toArray(), velocity: ballVelocity.toArray() });
+          sound.kick(.35); say('tackle', { who: who(index), team: hallName(player.home) });
+        }
+        for (const hit of hits) {
+          data.bodyHits.push(hit.index);
+          const dx = hit.target.x - player.motion.x, dz = hit.target.z - player.motion.z, gap = Math.hypot(dx, dz) || 1;
+          const impact = Math.max(0, ((player.motion.vx - hit.opponent.motion.vx) * dx + (player.motion.vz - hit.opponent.motion.vz) * dz) / gap);
+          data.contacts.push({ type: 'body', at: elapsed, index: hit.index, impact });
+          if (impact > 1.5 && elapsed >= (hit.opponent.downUntil || 0)) {
+            action(hit.opponent, 'fallen', true); hit.opponent.actionUntil = elapsed + 1.1;
+            hit.opponent.getUpAt = hit.opponent.actionUntil; hit.opponent.downUntil = hit.opponent.actionUntil + SLIDE_TIMING.getUp;
+            if (awayCarrier === hit.index) { awayCarrier = -1; controlLockUntil = Math.max(controlLockUntil, elapsed + .3); }
+          } else hit.opponent.stumbleUntil = elapsed + .3;
+        }
       }
+      data.feet = feet; data.ball.copy(ball.position); data.targetFeet = targetFeet; data.targetBodies = targetBodies; data.body = body;
+    }
+    // Upright poke or shoulder challenge. Slides use the posed boot sweep.
+    function challenge(player, style) {
+      const hard = style === 'hard';
+      const reach = player.mesh.position;
       const carrier = awayCarrier >= 0 ? people[awayCarrier] : null;
-      if (!slide && carrier && shoulderToShoulder(player, carrier)) {
+      if (carrier && shoulderToShoulder(player, carrier)) {
         // Running alongside: push, tug and barge him off the ball.
         const away = new THREE.Vector3(carrier.motion.x - player.motion.x, 0, carrier.motion.z - player.motion.z).normalize();
         carrier.motion.vx += away.x * 2.2; carrier.motion.vz += away.z * 2.2;
@@ -1045,7 +1172,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const verdict = assessChallenge(player.motion, opponent.motion, ball.position, { style, reach });
       if (onBall && verdict.foul) { foul(false, opponent, player, verdict.card); return true; }
       if (verdict.blocked) return false;
-      if (onBall) { winBall(opponent, (slide || hard) && player.mesh.position.distanceTo(opponent.mesh.position) < .95); return true; }
+      if (onBall) { winBall(opponent, hard && player.mesh.position.distanceTo(opponent.mesh.position) < .95); return true; }
       return false;
     }
     // Side by side with the carrier, both running the same way.
@@ -1062,7 +1189,6 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       else { opponent.actionUntil = elapsed + 0.4; }
       ballVelocity.set(3, 0.15, (random() - 0.5) * 2); spinBall();
       awayCarrier = -1; possessor = controlled; passTarget = -1; lastTouchHome = true; events.tackles++;
-      if (sliding) { possessor = -1; controlLockUntil = elapsed + 0.12; }
       if (knockedDown) show('TACKLE!');
       say('tackle', { who: who(controlled), team: hallName(true) });
     }
@@ -1291,7 +1417,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       carryOwner = -1; ballControl = createBallControl(elapsed); pendingKick = null;
       kickoffHome = home; nextKickoffHome = true; slideUntil = 0; sliding = null; skill = null; pendingRestart = null; passHold = false; pendingShot = null; setPiece = null;
       people.forEach(person => {
-        person.downUntil = 0; person.getUpAt = 0;
+        person.downUntil = 0; person.getUpAt = 0; person.slideState = null; person.slideRecoveryUntil = 0; person.slideStandAt = 0;
+        if (import.meta.env.DEV) person.fixtureFreezeUntil = 0;
         if (person.sentOff) return;
         person.mesh.position.set(person.spawn[0], 0, person.spawn[1]);
         Object.assign(person.motion, { x: person.spawn[0], z: person.spawn[1], vx: 0, vz: 0,
@@ -1625,15 +1752,17 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           if (elapsed < (active.stumbleUntil || 0)) movement.multiplyScalar(0.35);
           if (sliding) {
             const slider = sliding;
-            if (!slider.slideDecided && elapsed >= slideStartedAt + SLIDE_TIMING.contactDelay && challenge(slider, 'slide')) slider.slideDecided = true;
-            if (slider.sentOff || restart) { sliding = null; if (!slider.sentOff) recoverSlide(slider); }
+            if (slider.sentOff || restart || pendingRestart || keeperHolding >= 0) { sliding = null; if (!slider.sentOff) recoverSlide(slider); }
             else if (elapsed >= slideUntil) {
               // A poke does not put a sliding player straight back on his feet.
               sliding = null; recoverSlide(slider);
             }
           }
           if (elapsed < (active.downUntil || 0)) movement.set(0, 0, 0);
-          for (const person of people) if (person.getUpAt && elapsed >= person.getUpAt) { person.getUpAt = 0; action(person, 'stand', true); }
+          for (const person of people) if (person.getUpAt && elapsed >= person.getUpAt) {
+            person.getUpAt = 0; action(person, 'stand', true);
+            if (person.slideRecoveryUntil) { person.slideRecoveryUntil = 0; person.slideStandAt = elapsed; }
+          }
           let activeSpeed = 0;
           if (takingRestart && (restart.type === 'corner' || restart.type === 'freeKick' || restart.type === 'indirectFreeKick' || restart.type === 'penalty' || restart.type === 'goalKick')) {
             if (!setPiece) beginSetPiece();
@@ -1684,10 +1813,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           } else if (sliding === active) {
             // Root translation is removed from the animation: supply the
             // matching ground lunge here instead of braking a zero-input run.
-            const forward = forwardFromHeading(active.motion.heading);
-            const lungeTime = elapsed - slideStartedAt - SLIDE_TIMING.windup;
-            activeSpeed = lungeTime < 0 || active.slideDecided ? 0 : 7.5 * clamp(1 - lungeTime / SLIDE_TIMING.contactWindow, 0, 1);
-            active.motion.vx = forward.x * activeSpeed; active.motion.vz = forward.z * activeSpeed;
+            const velocity = slideVelocity(active.slideState.initial, active.motion.heading, elapsed - slideStartedAt, SLIDE_TIMING.animation);
+            active.motion.vx = velocity.x; active.motion.vz = velocity.z;
+            activeSpeed = Math.hypot(velocity.x, velocity.z);
             active.motion.x += active.motion.vx * dt; active.motion.z += active.motion.vz * dt;
           } else {
             activeSpeed = run(active, { x: movement.x * (skill ? .35 : 1), z: movement.z * (skill ? .35 : 1) }, dt,
@@ -1782,6 +1910,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               if (person.keeper && manualKeeper && keeperHolding < 0) updateKeeper(person, index, dt, true);
               continue;
             }
+            if (import.meta.env.DEV && elapsed < (person.fixtureFreezeUntil || 0)) { person.motion.vx = 0; person.motion.vz = 0; continue; }
             if (person.actionName === 'fallen' && elapsed >= person.actionUntil) action(person, 'stand', true);
             if (person.keeper) { updateKeeper(person, index, dt); continue; }
             if ((person.actionName === 'fallen' || person.actionName === 'stand') && person.actionUntil > elapsed) continue;
@@ -1952,7 +2081,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           if (physics) {
             const before = ballVelocity.clone();
             const carrierBeforeContact = possessor >= 0 ? possessor : awayCarrier;
-            const next = physics.step(dt, ball.position, ballVelocity, people.map(person => person.mesh.position), keeperHolding >= 0 ? keeperHolding : carrierBeforeContact);
+            const next = physics.step(dt, ball.position, ballVelocity, people.map(person => person.mesh.position), keeperHolding >= 0 ? keeperHolding : carrierBeforeContact, sliding ? people.indexOf(sliding) : -1);
             ball.position.set(next.position.x, next.position.y, next.position.z);
             ballVelocity.set(next.velocity.x, next.velocity.y, next.velocity.z);
             ball.quaternion.set(next.rotation.x, next.rotation.y, next.rotation.z, next.rotation.w);
@@ -2086,6 +2215,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const person = people[index]; person.mesh.updateMatrixWorld(true);
           const bounds = new THREE.Box3().setFromObject(person.mesh, true);
           return { action: person.actionName, visible: person.mesh.visible,
+            feet: feetOf(person),
+            body: slideBodyOf(person),
+            slide: person.slideState && { ballWon: person.slideState.ballWon, foot: person.slideState.foot, contacts: person.slideState.contacts },
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
             actionUntil: person.actionUntil, downUntil: person.downUntil || 0, getUpAt: person.getUpAt || 0,
             animationTime: person.currentAction?.time, animationSpeed: person.currentAction?.getEffectiveTimeScale(),
@@ -2099,10 +2231,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           reset(); keeperHolding = -1; random = createRandom(seed); kickoffWaiting = false; possessor = owner >= 0 && people[owner].home ? owner : -1;
           awayCarrier = owner >= 0 && !people[owner].home ? owner : -1;
           lastTouchHome = touch ?? (owner < 0 ? velocity[0] > 0 : people[owner].home);
-          for (const { index, x, z, heading, downFor = 0, stamina } of players) {
+          for (const { index, x, z, heading, downFor = 0, freezeFor = 0, stamina } of players) {
             const p = people[index]; if (stamina !== undefined) p.stamina = clamp(stamina, 0, 1);
             Object.assign(p.motion, { x, z, vx: 0, vz: 0, heading: heading ?? (p.home ? 0 : Math.PI) });
             p.mesh.position.set(x, 0, z); p.mesh.rotation.y = meshYawForHeading(p.motion.heading); p.actionUntil = 0; p.downUntil = elapsed + downFor;
+            p.fixtureFreezeUntil = elapsed + freezeFor;
           }
           controlLockUntil = elapsed + controlLockFor;
           ball.position.fromArray(position); ballVelocity.fromArray(velocity); physics?.reset(ball.position, ballVelocity, spin, people.map(person => person.mesh.position));
@@ -2277,6 +2410,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         person.visual = skinned;
         const toes = new Map();
         skinned.traverse(node => { if (node.isBone && /(?:Left|Right)ToeBase$/.test(node.name) && !toes.has(node.name)) toes.set(node.name, node); });
+        skinned.traverse(node => { if (node.isBone && /Hips$/.test(node.name) && !person.hipBone) person.hipBone = node; });
         person.footBones = [...toes.values()];
         person.mixer = new THREE.AnimationMixer(skinned); mixers.push(person.mixer);
       }
@@ -2288,7 +2422,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         if (!source) throw new Error(`${file} has no clip`);
         // The slide clip includes an authored get-up. Use just its grounded
         // portion; recovery is a separate, deliberately slower animation.
-        const clip = name === 'tackleAlternate' ? THREE.AnimationUtils.subclip(source, source.name, 0, 60, 30)
+        const clip = name === 'tackleAlternate' ? groundedSlideClip(source)
           : source.clone(); // never edit the shared source
         for (const track of clip.tracks) {
           if (name === 'spin' && track.name.toLowerCase().includes('hips.quaternion')) {

@@ -27,10 +27,12 @@ export function defensiveApproach(defender, carrier, ball, { goalX, primary = tr
   if (!assessChallenge(defender, carrier, ball).blocked) return { x: ball.x, z: ball.z };
   const dx = ball.x - carrier.x, dz = ball.z - carrier.z, size = Math.hypot(dx, dz) || 1;
   const side = ((defender.x - carrier.x) * -dz + (defender.z - carrier.z) * dx) >= 0 ? 1 : -1;
-  return { x: carrier.x + dx / size * .35 - dz / size * side * 1.25,
-    z: carrier.z + dz / size * .35 + dx / size * side * 1.25 };
+  // Finish on the ball side of the carrier. A point only .35 m ahead still
+  // leaves the body blocking a close touch, trapping the defender in jockey.
+  return { x: carrier.x + dx / size * .95 - dz / size * side * 1.25,
+    z: carrier.z + dz / size * .95 + dx / size * side * 1.25 };
 }
 
-// Half the old playback speed: each animation/recovery takes twice as long.
-export const SLIDE_TIMING = Object.freeze({ animation: 1.1, windup: .42, contactDelay: .58, contactWindow: .68,
+// Retain the requested slower get-up and the extra grounded hold after a miss.
+export const SLIDE_TIMING = Object.freeze({ animation: 1.1,
   missedRecovery: 4.8, groundHold: 2.6, getUp: 2.2 });

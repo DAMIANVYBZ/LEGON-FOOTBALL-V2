@@ -1,4 +1,17 @@
-import { LoopOnce, LoopRepeat } from 'three';
+import { AnimationClip, LoopOnce, LoopRepeat } from 'three';
+
+// The source tackle contains a running entry, a scissoring fall and a get-up.
+// Retain its torso descent, then hold the grounded pose. Feet are placed by
+// the two-joint slide reach; recovery uses the separate slowed stand clip.
+export function groundedSlideClip(source) {
+  const times = [0, .12, .28, .42, 1.1], poses = [.3, .6, 1, 1.2, 1.2];
+  return new AnimationClip('grounded-slide', 1.1, source.tracks.map(track => {
+    const result = track.clone(), interpolant = track.createInterpolant();
+    result.times = new Float32Array(times);
+    result.values = new Float32Array(poses.flatMap(time => Array.from(interpolant.evaluate(time))));
+    return result;
+  }));
+}
 
 // Replaying the same action must not fade that action down to zero: with
 // nothing else weighted, the skeleton flashes back to its bind (T) pose.

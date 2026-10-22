@@ -152,7 +152,7 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
     // Spin in radians per second, set at the moment of a kick.
     setSpin,
     spin() { return { ...spin }; },
-    step(dt, position, velocity, playerPositionsNow = [], carrier = -1) {
+    step(dt, position, velocity, playerPositionsNow = [], carrier = -1, slidingPlayer = -1) {
       // Gameplay events (kicks, tackles, carrying) move the ball directly;
       // physics resolves everything in between.
       const current = body.translation();
@@ -167,7 +167,9 @@ export async function createMatchPhysics({ length, width, goalWidth, goalHeight,
           && Math.hypot(position.x - striker.x, position.z - striker.z) > 0.5)) release = null;
       }
       players.forEach(({ body: player, collider }, index) => {
-        collider.setSensor(index === carrier || index === release?.index);
+        // A sliding player's animated boots resolve their tackle contact.
+        // The upright approximation must not steal/deflect the ball first.
+        collider.setSensor(index === carrier || index === release?.index || index === slidingPlayer);
         const position = playerPositionsNow[index];
         if (position) player.setNextKinematicTranslation({ x: position.x, y: 0.85, z: position.z });
       });

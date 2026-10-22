@@ -23,8 +23,9 @@ RULES=r'''()=>{
   }expect(fouls===0,'clean pokes produced '+fouls+' fouls');return {trials:40,fouls};
  });
  test('reckless body-first slide still produces a foul and red card',()=>{
-  d.scenario({ball:[2.28,.11,0],owner:12,players:[...far,{index:5,x:.2,z:0},{index:12,x:1.6,z:0,heading:0,downFor:3}]});
-  d.tackle('slide');d.step(.7);const s=d.snapshot();expect(s.restart?.type==='freeKick'&&!s.restart.home,'missing foul restart');expect(s.players[5].sentOff,'reckless slide not sanctioned');
+  d.scenario({ball:[5.28,.11,0],owner:12,players:[...far,{index:5,x:0,z:0},{index:12,x:4.6,z:0,heading:0,freezeFor:3}]});
+  d.move(1,0);d.press('shift');d.step(.45);d.tackle('slide');d.release('shift');d.step(.7);d.move(0,0);
+  const s=d.snapshot();expect(s.restart?.type==='freeKick'&&!s.restart.home,'missing foul restart');expect(s.players[5].sentOff,'reckless slide not sanctioned');
  });
  for(const type of ['freeKick','indirectFreeKick','corner','goalKick']){
   test(type+' short pass stays on ground and travels toward receiver',()=>{

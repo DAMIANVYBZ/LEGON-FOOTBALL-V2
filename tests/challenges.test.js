@@ -42,3 +42,12 @@ test('gentle standing body contact is not a foul but a forceful body-first slide
  assert.equal(assessChallenge({x:0,z:0,vx:4,vz:0},carrier,ball).foul,true);
  assert.equal(assessChallenge({x:0,z:0,vx:5.5,vz:0},carrier,ball,{style:'slide'}).card,'red');
 });
+
+test('working around a close shield reaches a position with an open path to the ball', async()=>{
+ const { defensiveApproach }=await import('../src/challenges.js');
+ for(const side of [-1,1]) {
+  const carrier={x:0,z:0},ball={x:.37,y:.11,z:side*.13};
+  const target=defensiveApproach({x:-1.6,z:side*.1},carrier,ball,{goalX:35});
+  assert.equal(assessChallenge(target,carrier,ball).blocked,false,'the approach target must actually clear the shield');
+ }
+});

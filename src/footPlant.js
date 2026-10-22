@@ -40,3 +40,28 @@ export function plantControlFoot(toe, ball, maxReach = 0.35) {
   ankle.updateWorldMatrix(false, true);
   return true;
 }
+
+// A tackle's extended and tucked boots have explicit ground targets. Solve
+// the real two-bone leg, retaining segment lengths and the boot orientation;
+// collision detection reads the resulting bones, not these desired targets.
+export function placeSlideFoot(toe, destination, amount) {
+  const ankle = toe.parent, knee = ankle?.parent, hip = knee?.parent;
+  if (!hip?.isBone || !knee.isBone || !ankle.isBone) return;
+  toe.getWorldPosition(toeAt); ankle.getWorldQuaternion(ankleRotation);
+  hip.getWorldPosition(hipAt); knee.getWorldPosition(kneeAt); ankle.getWorldPosition(ankleAt);
+  target.copy(ankleAt).add(from.set(destination.x - toeAt.x, destination.y - toeAt.y, destination.z - toeAt.z).multiplyScalar(amount));
+  const upper = hipAt.distanceTo(kneeAt), lower = kneeAt.distanceTo(ankleAt);
+  axis.subVectors(target, hipAt);
+  const distance = Math.min(axis.length(), (upper + lower) * .995);
+  if (distance < Math.abs(upper - lower) + .01) return;
+  axis.normalize(); target.copy(hipAt).addScaledVector(axis, distance);
+  pole.subVectors(kneeAt, hipAt).addScaledVector(axis, -pole.dot(axis));
+  if (pole.lengthSq() < 1e-8) pole.set(0, 1, 0).addScaledVector(axis, -axis.y);
+  pole.normalize();
+  const along = (upper * upper - lower * lower + distance * distance) / (2 * distance);
+  kneeTarget.copy(hipAt).addScaledVector(axis, along).addScaledVector(pole, Math.sqrt(Math.max(0, upper * upper - along * along)));
+  pointBone(hip, knee, kneeTarget); pointBone(knee, ankle, target);
+  ankle.parent.getWorldQuaternion(parentRotation);
+  ankle.quaternion.copy(parentRotation.invert().multiply(ankleRotation));
+  ankle.updateWorldMatrix(false, true);
+}

@@ -468,3 +468,26 @@ The active-team Sarbah first-half replay also completes with all 17 event groups
 passing. Production desktop keyboard and emulated landscape-phone joystick,
 multitouch, passing and pause checks pass with no JavaScript errors. Build and
 Cloudflare static-asset packaging dry run pass.
+
+
+## 2026-10-22 — grounded, directed sliding tackles
+
+Use the uploaded eFootball clip as a movement reference. Preserve running
+momentum, lead the moving ball within a small aiming cone, and keep sliding
+after contact. Replace the broad invisible tackle area with swept animated boot
+contact and calculate the ball's deflection from the contact angle and motion.
+Correct the leg pose, grounded hold and transition through the existing slower
+get-up. Judge the opponent's leg/body contact separately from touching the ball,
+including body-first fouls/cards and later trips. Exclude the sliding player's
+upright collision capsule during the slide; keep loose balls available to play.
+
+The bot replay also exposed a stalled approach beside close shielding. Move its
+approach destination past the shield so the defender can reach the exposed ball
+with its standing tackle. See [sliding tackle details](sliding-tackles.md) for the
+mechanics, measured contact/follow-through distances, replay commands and tests.
+
+Verified: 114 unit tests, 81 slide cases on three surfaces, 51 event groups and
+first-half completion on Sarbah/Astro/Oval, controller input/animation/halftime,
+and production desktop keyboard and emulated-phone multitouch/pause checks.
+Production build and Cloudflare static-asset packaging pass. Detailed artifacts
+are in `/workspace/slide-fix-audit/`.

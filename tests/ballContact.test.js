@@ -90,3 +90,20 @@ test('weighted passes reach their receiver at a controllable speed on every surf
   assert.ok(groundPassSpeed(25, 'soil') > groundPassSpeed(25, 'astro'));
   assert.ok(groundPassSpeed(100, 'soil', 5, 20) <= 20, 'never exceed the kick speed cap');
 });
+
+test('a sliding player has no invisible upright ball collision and normal collision returns afterwards', async () => {
+  const players = [{ x: 0, z: 0 }];
+  const physics = await createMatchPhysics({ length: 70, width: 45, goalWidth: 7.32, goalHeight: 2.44, playerPositions: players });
+  try {
+    for (const sliding of [0, -1]) {
+      let position = { x: -1, y: .8, z: 0 }, velocity = { x: 8, y: 0, z: 0 }, touched = false;
+      physics.reset(position, velocity, undefined, players);
+      for (let i = 0; i < 15; i++) {
+        const next = physics.step(1 / 60, position, velocity, players, -1, sliding);
+        position = next.position; velocity = next.velocity; touched ||= next.lastTouch === 0;
+      }
+      assert.equal(touched, sliding < 0);
+      if (sliding === 0) assert.ok(position.x > .7, 'an overhead ball must clear the prone player');
+    }
+  } finally { physics.free(); }
+});
