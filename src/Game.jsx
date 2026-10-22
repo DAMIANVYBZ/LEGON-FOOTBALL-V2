@@ -3,8 +3,10 @@ import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import TouchControls from './TouchControls.jsx';
 import { getVenue } from './venues.js';
+import { teamSizeForVenue, fieldPositions, kickoffRoles } from './roster.js';
 import { buildVenueScene } from './VenueScene.js';
 import { createStadiumGrassMaterial, textureStadiumGrass } from './stadiumGrass.js';
+import { RUN_PACE } from './movementConfig.js';
 import { activeGamepad, readGamepad } from './gamepad.js';
 import { keyLabel } from './preferences.js';
 import { abilityForWins, readTeamProgress, recordTeamWin } from './progression.js';
@@ -79,23 +81,13 @@ function stripBakedPitch(root, { length, width }) {
   });
 }
 
-function fieldPositions(formation, side, length, width) {
-  const rows = formation === '3–2–1' ? [3, 2, 1] : formation === '2–3–1' ? [2, 3, 1] : [2, 2, 2];
-  // Kickoff shape: every row inside its own half, forwards just behind halfway.
-  const xRows = [-length * .34, -length * .19, -length * .055];
-  const positions = [[side * -length * .46, 0]];
-  rows.forEach((count, row) => {
-    for (let i = 0; i < count; i++) positions.push([side * xRows[row], (i - (count - 1) / 2) * (Math.min(38, width * .66) / Math.max(count - 1, 1))]);
-  });
-  return positions;
-}
-
 // Dark text on light kits, white text on dark ones.
 const textOn = hex => { const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); return r * 0.3 + g * 0.59 + b * 0.11 > 150 ? '#161513' : '#ffffff'; };
 
 export default function Game({ config, cameraMode, exit, preferences, orientationBlocked = false }) {
   const venue = getVenue(config.venueId);
   const LENGTH = venue.length, WIDTH = venue.width;
+  const TEAM_SIZE = teamSizeForVenue(venue), kickoffOrder = kickoffRoles(TEAM_SIZE), FIRST_FORWARD = kickoffOrder[0];
   const GOAL_WIDTH = venue.kind === 'astro' ? 5.5 : 7.32;
   const GOAL_HEIGHT = venue.kind === 'astro' ? 2.2 : 2.44;
   const isTouch = config.inputMode === 'touch';
@@ -109,7 +101,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const [paused, setPaused] = useState(false);
   const [message, setMessage] = useState('KICK OFF');
   const [modelStatus, setModelStatus] = useState('LOADING PLAYERS');
-  const [selectedPlayer, setSelectedPlayer] = useState(6);
+  const [selectedPlayer, setSelectedPlayer] = useState(FIRST_FORWARD + 1);
   const [gamepadStatus, setGamepadStatus] = useState('');
   const [progress, setProgress] = useState(() => readTeamProgress(config.home));
   const [progressNotice, setProgressNotice] = useState('');
@@ -281,7 +273,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       return group;
     }
     for (const [home, side] of [[true, 1], [false, -1]]) {
-      fieldPositions(config.formation, side, LENGTH, WIDTH).forEach((spawn, index) => {
+      fieldPositions(config.formation, side, LENGTH, WIDTH, TEAM_SIZE).forEach((spawn, index) => {
         const mesh = placeholder(home ? kits.home : kits.away);
         mesh.position.set(spawn[0], 0, spawn[1]); playerRoot.add(mesh);
         const heading = home ? 0 : Math.PI;
@@ -290,7 +282,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           nextTackleAt: 0, saveUntil: 0, diveDirection: 0, motion: { x: spawn[0], z: spawn[1], vx: 0, vz: 0, heading } });
       });
     }
-    let controlled = 5, possessor = 5, awayCarrier = -1, awayKickUntil = 0, lastAutoSwitch = 0;
+    let controlled = FIRST_FORWARD, possessor = FIRST_FORWARD, awayCarrier = -1, awayKickUntil = 0, lastAutoSwitch = 0;
     people[controlled].mesh.position.set(-0.8, 0, 0);
     people[controlled].motion.x = -0.8;
     people[controlled].motion.z = 0;
@@ -356,7 +348,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const hallName = home => teamShort(home ? config.home : config.away);
     // The username of a real player when the campus game supplies one; empty
     // otherwise, so the commentator speaks of the hall instead.
-    const who = index => playerName(index, controlled);
+    const who = index => playerName(index, controlled, TEAM_SIZE);
     const say = (event, values = {}) => {
       commentary.say(event, { venue: venue.shortName, home: hallName(true), away: hallName(false), ...values });
       nextBuildAt = Math.max(nextBuildAt, elapsed + 7 + random() * 5);
@@ -401,7 +393,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const sprint = options.sprint && person.stamina > STAMINA.minimumToSprint;
       const carrying = options.dribbling && !restart && keeperHolding < 0;
       const strideInput = carrying ? controlStrideInput(person.motion, input, ball.position) : input;
-      const speedLimit = carrying ? controlStrideLimit(person.motion, strideInput, ball.position, ballVelocity) : Infinity;
+      const speedLimit = carrying ? controlStrideLimit(person.motion, strideInput, ball.position, ballVelocity, { sprint, controlledSprint: options.controlledSprint }) : Infinity;
       const speed = advancePlayer(person.motion, strideInput, dt, { ...options, sprint, speedLimit,
         ability: (options.ability ?? 1) * (1 - STAMINA.speedLoss * (1 - person.stamina)) });
       person.stamina = sprint && speed > 4.5 ? Math.max(0, person.stamina - STAMINA.sprintDrain * dt)
@@ -711,10 +703,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (plan.thrown) ball.position.set(plan.origin.x, plan.origin.y, plan.origin.z);
       ballVelocity.set(launch.velocity.x, launch.velocity.y, launch.velocity.z); spinBall(launch.spin);
       const shot = !plan.directed && piece.mode === 'shot' && piece.button !== 'j';
-      if (restart?.type === 'penalty') keeperGuess(7);
+      if (restart?.type === 'penalty') keeperGuess(TEAM_SIZE);
       possessor = -1; awayCarrier = -1; passDestination = null; restart = null; setPiece = null;
       controlLockUntil = elapsed + 0.35; lastTouchHome = true;
-      if (shot) { lastShooter = controlled; lastShotAt = elapsed; if (people[7].reactAt < elapsed) people[7].reactAt = elapsed + (0.24 + random() * 0.12) / difficulty.keeper; /* partly screened by the wall */ passTarget = -1; say('shot', { who: who(controlled), team: hallName(true) }); }
+      if (shot) { lastShooter = controlled; lastShotAt = elapsed; if (people[TEAM_SIZE].reactAt < elapsed) people[TEAM_SIZE].reactAt = elapsed + (0.24 + random() * 0.12) / difficulty.keeper; /* partly screened by the wall */ passTarget = -1; say('shot', { who: who(controlled), team: hallName(true) }); }
       else {
         // The teammate nearest the target attacks the ball.
         const near = plan.directed ? plan.receiver : nearestOf(true, target.x, target.z, controlled);
@@ -780,7 +772,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           launchTo({ x: aimed.x, z: aimed.z }, aimed.height, speed * teamAbility, SHOT_STYLES[shot.style]?.spin || 'shot', -aimed.z || -ball.position.z || 1);
         }
         // The keeper needs a moment to read the strike.
-        people[7].reactAt = elapsed + (0.2 + random() * 0.12) / difficulty.keeper;
+        people[TEAM_SIZE].reactAt = elapsed + (0.2 + random() * 0.12) / difficulty.keeper;
       } else if (delivery) {
         const launch = passingAssistance === 'manual' ? delivery.velocity : groundPassVelocity(speed, direction, person.motion, teamAbility);
         ballVelocity.set(launch.x, launch.y, launch.z);
@@ -917,7 +909,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (person.home) { possessor = -1; passTarget = kind === 'shoot' ? -1 : target; passDestination = kind === 'shoot' ? null : destination; passDeadline = elapsed + 4; }
       else { awayCarrier = -1; awayPassTarget = kind === 'shoot' ? -1 : target; awayPassDestination = kind === 'shoot' ? null : destination; awayPassDeadline = elapsed + 4; }
       lastTouchHome = person.home; awayKickUntil = elapsed + (kind === 'shoot' ? 0.8 : 0.3); controlLockUntil = elapsed + 0.25;
-      if (kind === 'shoot') people[person.home ? 7 : 0].reactAt = elapsed + 0.2 + random() * 0.12;
+      if (kind === 'shoot') people[person.home ? TEAM_SIZE : 0].reactAt = elapsed + 0.2 + random() * 0.12;
       if (kind === 'shoot') { events.awayShots++; lastShooter = index; lastShotAt = elapsed; say('shot', { who: who(index), team: hallName(person.home) }); }
       else if (kind === 'cross') say('cross', { team: hallName(person.home) });
       else if (kind === 'through') say('through', { who: who(target), team: hallName(person.home) });
@@ -936,7 +928,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       possessor = -1; awayCarrier = -1; passTarget = -1; awayPassTarget = -1; keeperHolding = -1; setKeeperBall(false); targetRing.visible = false;
       if (type === 'freeKick' && insideBox(spot.x, spot.z, !home)) spot = { x: ownGoalX(!home) + (home ? -1 : 1) * (boxDepth + 0.8), z: spot.z };
       ball.position.set(spot.x, BALL_RADIUS, spot.z); ballVelocity.set(0, 0, 0);
-      const taker = type === 'goalKick' ? (home ? 0 : 7) : nearestOf(home, spot.x, spot.z);
+      const taker = type === 'goalKick' ? (home ? 0 : TEAM_SIZE) : nearestOf(home, spot.x, spot.z);
       const goalAhead = -ownGoalX(home);
       const facing = type === 'corner' ? Math.atan2(-spot.z, goalAhead * 0.85 - spot.x) : type === 'freeKick' || type === 'penalty'
         ? Math.atan2(-spot.z * 0.5, goalAhead - spot.x) : (home ? 0 : Math.PI);
@@ -980,7 +972,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         cpuPlay(taker, 'shoot', { x: goal.x, z, high });
         // Struck firmly, as a penalty is.
         launchTo({ x: goal.x, z }, high ? 1.3 + random() * 0.6 : 0.3 + random() * 0.4, (24 + random() * 5) * difficulty.shot, 'shot');
-        keeperGuess(home ? 7 : 0, home ? null : penaltyDive);
+        keeperGuess(home ? TEAM_SIZE : 0, home ? null : penaltyDive);
         return;
       }
       if (type === 'corner') {
@@ -1476,9 +1468,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         idle(person);
       });
       ball.position.set(0, BALL_RADIUS, 0); ballVelocity.set(0, 0, 0);
-      controlled = [5, 6, 4, 3, 2, 1].find(i => !people[i].sentOff) ?? 0; awayCarrier = -1; awayKickUntil = 0; controlLockUntil = 0; keeperHolding = -1;
+      controlled = kickoffOrder.find(i => !people[i].sentOff) ?? 0; awayCarrier = -1; awayKickUntil = 0; controlLockUntil = 0; keeperHolding = -1;
       // The kicking-off forward stands at the centre spot, behind the ball.
-      const takerIndex = [5, 6, 4, 3, 2, 1].map(i => home ? i : i + 7).find(i => !people[i].sentOff), taker = people[takerIndex];
+      const takerIndex = kickoffOrder.map(i => home ? i : i + TEAM_SIZE).find(i => !people[i].sentOff), taker = people[takerIndex];
       Object.assign(taker.motion, { x: home ? -0.8 : 0.8, z: 0 });
       taker.mesh.position.set(taker.motion.x, 0, 0);
       possessor = home ? takerIndex : -1; awayCarrier = home ? -1 : takerIndex; kickoffTakeAt = elapsed + 1.4;
@@ -1698,7 +1690,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       action(header, 'headerBall', true); sound.kick(0.4);
       possessor = -1; awayCarrier = -1; passTarget = -1; awayPassTarget = -1; lastTouchHome = header.home;
       controlLockUntil = elapsed + 0.25; awayKickUntil = elapsed + 0.3;
-      people[header.home ? 7 : 0].reactAt = elapsed + 0.18 + random() * 0.1;
+      people[header.home ? TEAM_SIZE : 0].reactAt = elapsed + 0.18 + random() * 0.1;
       lastShooter = index; lastShotAt = elapsed; count('headers');
       if (!header.home) events.awayShots++;
       show('HEADER!', 0.9); say('shot', { who: who(index), team: hallName(header.home) });
@@ -1840,7 +1832,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           path: receivingPath({ x: ball.position.x, y: ball.position.y, z: ball.position.z },
             { x: ballVelocity.x, y: ballVelocity.y, z: ballVelocity.z }, physics?.spin(), venue.surface) };
       }
-      const pace = (touchSprint ? controlledSprint ? 6.8 : 8.1 : 5.8) * teamAbility * (1 - STAMINA.speedLoss * (1 - receiver.stamina));
+      const pace = (touchSprint ? controlledSprint ? RUN_PACE.controlled : RUN_PACE.sprint : RUN_PACE.jog) * teamAbility * (1 - STAMINA.speedLoss * (1 - receiver.stamina));
       let point = receivingPoint(receiver.motion, receivingForecast.path, pace, { length: LENGTH, width: WIDTH }, elapsed - receivingForecast.at);
       // Let the recipient run into the general landing area, then give the
       // user control before contact rather than changing control at the trap.
@@ -2103,9 +2095,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               ? (passTarget === index || index === nearestLooseHome || (teammateContain && defending && index === helper))
               : press || (loose && index === nearestAway && person.mesh.position.distanceTo(ball.position) < 22) || awayPassTarget === index);
             const attacking = person.home ? lastTouchHome : !lastTouchHome;
-            const automaticRun = attacking && (person.role >= 5 || (person.role >= 3 && Math.sign(roleZ) !== Math.sign(ball.position.z)));
+            const automaticRun = attacking && ((person.role >= (TEAM_SIZE === 7 ? 5 : 7)) || (person.role >= (TEAM_SIZE === 7 ? 3 : 4) && Math.sign(roleZ) !== Math.sign(ball.position.z)));
             const support = supportPosition(person.spawn, ball.position, { length: LENGTH, width: WIDTH },
-              { home: person.home, attacking, run: automaticRun || (person.home && elapsed < runUntil), lane: Math.sign(roleZ), role: person.role,
+              { home: person.home, attacking, run: automaticRun || (person.home && elapsed < runUntil), lane: Math.sign(roleZ), role: person.role, forwardRole: TEAM_SIZE === 7 ? 5 : 7,
                 offsideLine: supportLines[Number(person.home)] });
             const carryingAway = awayCarrier === index;
             const destination = person.home ? passDestination : awayPassDestination;
@@ -2117,7 +2109,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const meetPass = receiving && ball.position.y < 0.85 && ball.position.distanceTo(destination) < 6;
             let targetX, targetZ;
             if (restart?.type === 'goalKick') {
-              const shape = goalKickPosition(person.role, { length: LENGTH, width: WIDTH }, restart.home, person.home === restart.home);
+              const shape = goalKickPosition(person.role, { length: LENGTH, width: WIDTH }, restart.home, person.home === restart.home, TEAM_SIZE - 1);
               targetX = shape.x; targetZ = shape.z;
             } else if (receiving) { targetX = intercept ? intercept.x : meetPass ? ball.position.x + ballVelocity.x * 0.12 : destination.x; targetZ = intercept ? intercept.z : meetPass ? ball.position.z + ballVelocity.z * 0.12 : destination.z; }
             else if (restart && index === shortReceiver) {
@@ -2233,7 +2225,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             }
           }
           if (!restart && keeperHolding < 0) {
-            const phase = offside.snapshot(), defendingKeeper = phase ? people[phase.home ? 7 : 0] : null;
+            const phase = offside.snapshot(), defendingKeeper = phase ? people[phase.home ? TEAM_SIZE : 0] : null;
             const shot = defendingKeeper && shotOnGoal(ball.position, ballVelocity, ownGoalX(!phase.home), GOAL_WIDTH, GOAL_HEIGHT);
             const interfering = offsideInterference(phase, ball.position, rulePlayers(), { shot: Boolean(shot) });
             if (interfering !== null) ruleTouch(interfering);
@@ -2248,7 +2240,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             if (dribbler !== carryOwner) ballControl = createBallControl(elapsed);
             const carrier = people[dribbler];
             const touch = footTouch(ballControl, ball.position, ballVelocity, carrier.motion, feetOf(carrier), elapsed,
-              { sprint: dribbler === controlled ? touchSprint && !controlledSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5 });
+              { sprint: dribbler === controlled ? touchSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5, controlledSprint: dribbler === controlled && controlledSprint });
             if (touch) {
               ballVelocity.set(touch.velocity.x, touch.velocity.y, touch.velocity.z);
               if (touch.spin) physics?.setSpin(touch.spin);
@@ -2701,7 +2693,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       {preferences.hud.score && <div className="scoreboard"><span style={{ background: kits.home, color: textOn(kits.home) }}>{homeName}</span><b>{score[0]}</b><div>{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}<small>{half === 1 ? '1ST' : '2ND'} HALF</small></div><b>{score[1]}</b><span style={{ background: kits.away, color: textOn(kits.away) }}>{awayName}</span></div>}
       {preferences.hud.messages && message && <div className="game-message">{message}</div>}
       {preferences.hud.messages && modelStatus && <div className="model-status">{modelStatus}</div>}
-      {preferences.hud.radar && <div className="radar" ref={radar}><div className="radar-mid"/>{Array.from({ length: 14 }, (_, index) => <i key={index} className={`dot ${index < 7 ? 'home' : 'away'}`}/>)}<i className="dot ball"/></div>}
+      {preferences.hud.radar && <div className="radar" ref={radar}><div className="radar-mid"/>{Array.from({ length: TEAM_SIZE * 2 }, (_, index) => <i key={index} className={`dot ${index < TEAM_SIZE ? 'home' : 'away'}`}/>)}<i className="dot ball"/></div>}
       {preferences.hud.score && <div className="hud-bottom"><span>{homeName} <i/></span><span>{awayName} <i/></span></div>}
       {!isTouch && preferences.hud.hints && <div className="controls-hint">{keeperBall ? (gamepadStatus ? `KEEPER'S BALL · AIM: L · THROW: ${pad.cross} (HOLD = LONGER) · LONG KICK: ${pad.triangle} · PUT DOWN: ${pad.circle}` : keeperHint)
         : padPhase === 'penaltyKeeper' ? `PENALTY AGAINST YOU · HOLD ${gamepadStatus ? 'L' : preferences.keyboardPreset === 'classic' ? '← OR →' : 'A OR D'} LEFT OR RIGHT TO DIVE AT THE KICK · LET GO TO STAY CENTRAL`

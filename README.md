@@ -22,7 +22,7 @@ Throw-ins now wait for a taker, and restart double touches are penalised.
 
 Goals require a full valid crossing between the posts and below the bar. Chips
 respect manual aim. The grass bounce and rolling baselines reference Google
-Research Football, while the browser engine, seven-a-side tactics and animation
+Research Football, while the browser engine, venue-specific tactics and animation
 system remain distinct. See the [gameplay audit and remaining differences](docs/gameplay-rules-and-physics-audit.md)
 and [ongoing work log](docs/gameplay-work-log.md). Run `python tools/audit_rules.py`
 against the development server for the all-venue rules regression.
@@ -51,7 +51,7 @@ For a same-window integration, call `window.MonkeyPostCampus.arriveAtVenue('sarb
 - Athletic Oval Mini Stadium: worn grass, running track, basketball and tennis courts.
 - University of Ghana Stadium: full-size grass pitch, blue athletics track, tiered seating and floodlights.
 
-The University of Ghana Sports Stadium and Athletic Oval use GLB exports of the supplied LEGONRUSH procedural models (`src/game/stadium.ts` and `src/game/athletics.ts`). Their pitch, track, stands, courts and nearby structures come from those models. The other six venues use stylized 3D interpretations of the supplied aerial references until equivalent source geometry is available. Venue-specific pitch dimensions, surfaces, scenery and camera scaling are applied during play. Pitches are sized for seven-a-side at 75% of each field's full marked size (56 × 36 m at Presec up to 79 × 51 m at the UG Stadium). The stadium and Oval models have a full-size pitch baked in; their white lines and goals are removed at load time (`bakedPitch` in the manifest) and the game draws the seven-a-side pitch on their grass. Matches have seven players per side (six outfield and one goalkeeper), full-size goal frames, basic CPU play and goalkeeper saves, two halves, scoring, throw-ins and pause. Co-op, wide and behind-player cameras are available. Passing aims toward a teammate in the chosen direction and switches control to the receiver when they collect the ball; the other outfielders keep moving.
+The University of Ghana Sports Stadium and Athletic Oval use GLB exports of the supplied LEGONRUSH procedural models (`src/game/stadium.ts` and `src/game/athletics.ts`). Their pitch, track, stands, courts and nearby structures come from those models. The other six venues use stylized 3D interpretations of the supplied aerial references until equivalent source geometry is available. Venue-specific pitch dimensions, surfaces, scenery and camera scaling are applied during play. Pitch dimensions retain their existing 75% scale of each field's full marked size (56 × 36 m at Presec up to 79 × 51 m at the UG Stadium). The stadium and Oval models have a full-size pitch baked in; their white lines and goals are removed at load time (`bakedPitch` in the manifest) and the game draws its compact pitch on their grass. Matches have ten players per side (nine outfield and one goalkeeper), except Presec Astroturf which retains seven (six outfield and one goalkeeper), full-size goal frames, basic CPU play and goalkeeper saves, two halves, scoring, throw-ins and pause. Co-op, wide and behind-player cameras are available. Passing aims toward a teammate in the chosen direction and switches control to the receiver when they collect the ball; the other outfielders keep moving.
 
 Presec Astroturf requires a five-minute session booking before kickoff. The five-minute duration, fee and booking horizon are defined in `src/booking.js`, so they can be adjusted later. Each slot has two team places. A vacant opponent place is filled by CPU players. The standalone site's booking and 50-coin sample wallet use browser storage **only as a preview**; they are not cross-device reservations or real campus-game coin payments. A shared service must perform an atomic reservation, check the two team places, and debit the authenticated player's wallet in one transaction. All other campus fields can start a CPU match immediately.
 
@@ -73,7 +73,7 @@ The football pitch center is `(0, 0, 0)`, the pitch runs along X, and one unit i
 
 ## Team Pro integration boundary
 
-Real friends moving off the ball, solo matchmaking, shared bookings and coin balances require authenticated player identities and an authoritative multiplayer service from the campus game. Each side has seven positions: six outfielders and one goalkeeper. The server should assign one human to each claimed position and fill the rest with bots. Human players continue moving their assigned outfielders off the ball; the player receiving a pass owns the ball action while teammates retain their own movement control. A solo entrant should be paired with a solo opponent in the same venue and time slot when one is available. The football client currently implements solo pass-to-receiver control transfer and CPU fillers, but the online transport and shared booking service are **not yet connected**. The standalone static Site cannot provide those server functions by itself.
+Real friends moving off the ball, solo matchmaking, shared bookings and coin balances require authenticated player identities and an authoritative multiplayer service from the campus game. Each side has ten positions: nine outfielders and one goalkeeper. Presec Astroturf retains seven: six outfielders and one goalkeeper. The server should assign one human to each claimed position and fill the rest with bots. Human players continue moving their assigned outfielders off the ball; the player receiving a pass owns the ball action while teammates retain their own movement control. A solo entrant should be paired with a solo opponent in the same venue and time slot when one is available. The football client currently implements solo pass-to-receiver control transfer and CPU fillers, but the online transport and shared booking service are **not yet connected**. The standalone static Site cannot provide those server functions by itself.
 
 The supplied rigged character and 29 animation clips are in `public/`. Jogging, dribbling, passing, shooting, tackling, goalkeeper actions, heading and celebration have contextual triggers.
 
@@ -141,7 +141,7 @@ CPU ball carriers choose between shooting (aimed away from the keeper, accuracy 
 
 Matches have spoken commentary through the device's own voice (Web Speech API), with on-screen captions: no audio files, a few kilobytes of code (`src/commentary.js`). It calls kickoffs, shots, saves, goals with the score, tackles, fouls, corners, throw-ins, half and full time, and build-up play, naming the halls. Goals interrupt anything; minor moments are skipped while the commentator is talking, and the same kind of call is not repeated within ten seconds. Switch it off in Settings → HUD → Commentary.
 
-When the campus game supplies usernames, the commentator uses them for the player on the ball. Pass them with `/?player=Name` (the solo player), `window.MonkeyPostCampus.setPlayerNames({ solo, home, away })`, or a `postMessage` of `{ type: 'monkeypost:players', solo, home, away }`, where `home` and `away` map team slots (0 = keeper, 1-6 outfield) to usernames (`src/players.js`).
+When the campus game supplies usernames, the commentator uses them for the player on the ball. Pass them with `/?player=Name` (the solo player), `window.MonkeyPostCampus.setPlayerNames({ solo, home, away })`, or a `postMessage` of `{ type: 'monkeypost:players', solo, home, away }`, where `home` and `away` map team slots (0 = keeper, 1–9 outfield; Presec uses 1–6 outfield) to usernames (`src/players.js`).
 
 ## Downloads, versions and updates
 
@@ -209,3 +209,13 @@ After Cloudflare publishes a working `workers.dev` address, connect
 must be active; if nameservers still point elsewhere, copy Cloudflare's assigned
 nameservers into Namecheap Custom DNS while retaining existing email records.
 The repository configuration does not change domain registration or DNS.
+
+## Venue rosters and sprint controls
+
+All non-Presec venues now use 10v10: nine outfield players and one keeper per side. Their formations are 3–3–3, 4–3–2 and 3–4–2. Presec Astroturf retains its 7v7 roster, original formations, field dimensions and booking rules. Saved formations translate between venue sizes. Keeper indices, kickoff takers, goal-kick outlets, player names and radar dots follow the active roster.
+
+R1/RB is full sprint with quicker acceleration and heavier touches. R2/RT is controlled sprint with 75% of full sprint pace, more agile turning and shorter, more frequent touches. With fresh stamina, dribbling targets are 7.8 m/s and 5.85 m/s respectively; ordinary dribbling remains 4.7 m/s. Without the ball, full/controlled sprint targets are 8.1/6.075 m/s. Stamina, deliberate shielding, actual collisions and reachable-foot recovery still apply; approaching the goal or charging a shot does not independently cap sprint speed.
+
+The possession stride limiter now distinguishes a healthy boot-side touch from a genuine rear/wide recovery, so pressing sprint is not silently limited to walking pace over a slow nearby ball. Sprint mode is passed through to the boot-contact cadence.
+
+`npm test` covers roster sizes/placement, saved formation compatibility, names/keepers, goal-kick support and sprint profiles. For the actual animated match-loop regression, start the dev server and run `python tests/browser_gameplay.py` with Python Playwright and Chromium installed. It verifies 20-player matches, Presec's 14-player exception, and R1/R2 dribbling speeds while charging a shot near goal. Controller input is simulated; a physical DualSense has not been tested here.

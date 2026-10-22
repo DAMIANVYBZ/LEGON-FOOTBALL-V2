@@ -1,3 +1,4 @@
+import { RUN_PACE } from './movementConfig.js';
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 // The Mixamo player faces local +Z; heading is the world-space travel angle.
@@ -31,12 +32,13 @@ export function advancePlayer(state, input, dt, { sprint = false, dribbling = fa
   const length = Math.hypot(input.x, input.z);
   const directionX = length > 0.001 ? input.x / length : 0;
   const directionZ = length > 0.001 ? input.z / length : 0;
-  const pace = (keeper ? 4.8 : dribbling ? (sprint ? controlledSprint ? 6 : 7.2 : 4.7) : sprint ? controlledSprint ? 6.8 : 8.1 : 5.8) * ability;
+  const pace = (keeper ? 4.8 : dribbling ? (sprint ? controlledSprint ? RUN_PACE.dribbleControlled : RUN_PACE.dribbleSprint : RUN_PACE.dribble) : sprint ? controlledSprint ? RUN_PACE.controlled : RUN_PACE.sprint : RUN_PACE.jog) * ability;
   const wantedSpeed = Math.min(pace * Math.min(1, length), Math.max(0, speedLimit));
   const wantedX = directionX * wantedSpeed;
   const wantedZ = directionZ * wantedSpeed;
   const reversing = state.vx * wantedX + state.vz * wantedZ < -0.1;
-  const acceleration = length < 0.05 ? 16 : reversing ? 13 : sprint ? 15 : 19;
+  const braking = wantedSpeed < Math.hypot(state.vx, state.vz);
+  const acceleration = length < 0.05 ? 16 : reversing ? controlledSprint ? 20 : 13 : braking ? controlledSprint ? 20 : 15 : sprint ? controlledSprint ? 19 : 24 : 19;
   const change = acceleration * dt;
   const differenceX = wantedX - state.vx;
   const differenceZ = wantedZ - state.vz;
@@ -50,7 +52,8 @@ export function advancePlayer(state, input, dt, { sprint = false, dribbling = fa
   if (speed > 0.12) {
     const wantedHeading = Math.atan2(state.vz, state.vx);
     const difference = Math.atan2(Math.sin(wantedHeading - state.heading), Math.cos(wantedHeading - state.heading));
-    state.heading += clamp(difference, -9 * dt, 9 * dt);
+    const turnRate = controlledSprint ? 12 : sprint ? 8 : 9;
+    state.heading += clamp(difference, -turnRate * dt, turnRate * dt);
   }
   return speed;
 }
@@ -70,11 +73,11 @@ export function canReceivePass(player, ball, velocity) {
     && ball.y < 0.85 && Math.hypot(velocity.x, velocity.y, velocity.z) < 15;
 }
 
-export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0, offsideLine } = {}) {
+export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0, forwardRole = 5, offsideLine } = {}) {
   const attackSign = home ? 1 : -1;
   const forward = attacking ? (run ? 11 : 5) : -3;
   const crossing = attacking && Math.abs(ball.z) > field.width * 0.27 && attackSign * ball.x > field.length * 0.08;
-  const attackingRole = role >= 5;
+  const attackingRole = role >= forwardRole;
   const boxRunX = attackSign * (field.length / 2 - (role % 2 ? 8 : 13));
   const boxRunZ = role % 2 ? 0 : Math.sign(ball.z) * Math.min(7, field.width * 0.13);
   const target = {
@@ -193,10 +196,13 @@ export function groundPassVelocity(speed, direction, player, ability = 1) {
 // Seven-a-side goal-kick shape, measured from the kicking team's goal line.
 // Stagger short outlets, a central pivot and higher support instead of putting
 // every formation row in the same two wide lanes. Opponents protect the centre.
-export function goalKickPosition(role, field, kickingHome, teammate) {
+export function goalKickPosition(role, field, kickingHome, teammate, outfieldCount = 6) {
   const own = [[.14,-.18],[.18,.18],[.30,0],[.40,-.14],[.48,.24],[.59,.04]];
   const opposition = [[.72,.14],[.65,-.16],[.51,-.06],[.43,.15],[.29,-.16],[.23,.05]];
-  const [depth, lane] = (teammate ? own : opposition)[clamp(role - 1, 0, 5)];
+  const largeOwn = [[.14,-.18],[.18,.18],[.30,0],[.32,-.25],[.36,.25],[.43,-.10],[.48,.14],[.57,-.25],[.59,.04]];
+  const largeOpposition = [[.74,-.20],[.72,.20],[.65,0],[.57,-.24],[.53,.24],[.46,-.09],[.40,.12],[.29,-.18],[.23,.05]];
+  const shape = outfieldCount === 9 ? (teammate ? largeOwn : largeOpposition) : (teammate ? own : opposition);
+  const [depth, lane] = shape[clamp(role - 1, 0, shape.length - 1)];
   const sign = kickingHome ? 1 : -1;
   return { x: sign * field.length * (depth - .5), z: sign * field.width * lane };
 }

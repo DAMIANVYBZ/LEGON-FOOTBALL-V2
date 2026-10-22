@@ -1,4 +1,5 @@
 import { BALL } from './physicsConfig.js';
+import { dribbleTouchProfile } from './movementConfig.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export const BOOT_REACH = 0.26;
@@ -44,17 +45,24 @@ export function controlStrideInput(player, input, ball) {
 // A carrier must leave time for the next boot contact when accelerating or
 // changing lanes. Limit the wanted stride, preserving normal acceleration;
 // this never alters the ball or applies to an already released pass.
-export function controlStrideLimit(player, input, ball, velocity) {
+export function controlStrideLimit(player, input, ball, velocity, options = {}) {
   const amount = Math.hypot(input.x, input.z);
   const dx = ball.x - player.x, dz = ball.z - player.z;
   if (amount < 0.05 || ball.y > BALL.radius + 0.15 || Math.hypot(dx, dz) > 1.4) return Infinity;
   const fx = input.x / amount, fz = input.z / amount;
   const lead = dx * fx + dz * fz;
   const ballPace = velocity.x * fx + velocity.z * fz;
-  return Math.max(lead < -0.3 ? 0.2 : 1.2, ballPace + (lead + 0.1) * 12);
+  const recoveryLimit = Math.max(lead < -0.3 ? 0.2 : 1.2, ballPace + (lead + 0.1) * 12);
+  const across = Math.abs(dx * -fz + dz * fx);
+  // A normal boot-side touch must not cap a sprint to walking pace. Preserve
+  // braking for a ball behind the stride, a wide turn, or a ball rolling away.
+  if (options.sprint && lead >= -.2 && across < .5 && ballPace >= -.5)
+    return Math.max(recoveryLimit, dribbleTouchProfile(options).pace * Math.min(1, amount) * .95);
+  return recoveryLimit;
 }
 
-export function footTouch(state, ball, velocity, player, feet, time, { sprint = false } = {}) {
+export function footTouch(state, ball, velocity, player, feet, time, { sprint = false, controlledSprint = false } = {}) {
+  const profile = dribbleTouchProfile({ sprint, controlledSprint });
   if (state.lastMotion) {
     const dvx = player.vx - state.lastMotion.vx, dvz = player.vz - state.lastMotion.vz;
     const braking = dvx * state.lastMotion.vx + dvz * state.lastMotion.vz < -0.05;
@@ -77,11 +85,11 @@ export function footTouch(state, ball, velocity, player, feet, time, { sprint = 
   const drifting = needsControlTrap(ball, velocity, player);
   if (recovering) state.trapUntil = time + 0.15;
   const trapping = time < state.trapUntil && (drifting || recovering);
-  const interval = trapping ? 0.04 : speed < 0.3 ? 0.1 : sprint ? 0.3 : 0.23;
+  const interval = trapping ? 0.04 : speed < 0.3 ? 0.1 : profile.interval;
   if (foot.gap <= BOOT_REACH && time - state.lastTouch >= interval) {
     const lead = (ball.x - player.x) * fx + (ball.z - player.z) * fz;
     const side = (ball.x - player.x) * -fz + (ball.z - player.z) * fx;
-    const push = speed < 0.3 || trapping ? 0 : clamp(0.4 + ((sprint ? 0.5 : 0.32) - lead) * 5, -1.2, 1.5);
+    const push = speed < 0.3 || trapping ? 0 : clamp(0.4 + (profile.lead - lead) * 5, -1.2, profile.pushMax);
     const lateral = speed < 0.3 ? 0 : clamp(-side * 3, -1, 1);
     const next = { x: speed < 0.3 ? 0 : player.vx + fx * push - fz * lateral,
       y: Math.max(-0.6, Math.min(0, velocity.y)), z: speed < 0.3 ? 0 : player.vz + fz * push + fx * lateral };
@@ -90,7 +98,7 @@ export function footTouch(state, ball, velocity, player, feet, time, { sprint = 
       // leaving it behind the body as the player turns through 180 degrees.
       const tx = player.x + player.vx / speed * 0.28 - ball.x;
       const tz = player.z + player.vz / speed * 0.28 - ball.z;
-      const reserve = recovering ? (sprint ? 1.5 : 0.7) : 0;
+      const reserve = recovering ? profile.recovery : 0;
       const cx = tx * 5 + player.vx / speed * reserve, cz = tz * 5 + player.vz / speed * reserve;
       const scale = Math.min(1, 3 / (Math.hypot(cx, cz) || 1));
       next.x = player.vx + cx * scale; next.z = player.vz + cz * scale;
