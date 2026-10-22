@@ -49,7 +49,7 @@ EVENTS = r'''spec => {
   });
   check('through pass',()=>{
     fresh({players:[...far,{index:5,x:0,z:0},{index:6,x:12,z:0}]});
-    d.aim({x:1,z:0});d.press('i');expect(d.snapshot().passTarget===6,'Through pass has no receiver');
+    d.aim({x:1,z:0});d.press('i');d.release('i');expect(d.snapshot().passTarget===6,'Through pass has no receiver');
     expect(d.snapshot().passDestination[0]>12,'Through pass did not lead the runner');
   });
   check('normal, low, finesse and power shots',()=>{

@@ -122,6 +122,15 @@ Fouls and cards: a clean ball-first tackle is legal even from behind. Body-first
 
 The six remaining park scenes are approximations. The supplied LEGONRUSH source contains modeled stadium and Oval scenes but does not expose equivalent standalone models for all those parks. Physics and CPU tactics remain a foundation. Penalty shootout rules, a complete Cup, real-player multiplayer, accounts and shared persistence remain to be built.
 
+## Passing and crossing assistance
+
+Settings → Gameplay → Passing & Crossing offers three saved modes: **Assisted**
+corrects aim and weights the delivery for a recipient; **Semi** provides limited
+correction while stick direction and held power remain decisive; **Manual**
+uses the aiming direction and held power without recipient snapping or automatic
+power correction. Hold and release Pass, Through or Lob/Cross to deliver.
+See [passing mode behavior and checks](docs/passing-assistance-modes.md).
+
 ## Goalkeepers, set pieces and match flow
 
 A loading screen stays up until the venue, all players, every animation and the physics are ready, and lifts on the kickoff view. Keepers always attempt a save: they narrow the angle, rush out one-on-one, dive for wide shots, jump for high ones and block shots struck at them. Saves end as catches, parries (wide or behind for a corner), punches or spills (`src/keeper.js`). When your keeper catches the ball you control him: aim with the movement keys (a yellow ring marks the target, orange when he is marked), tap pass for a rolled throw or hold it for an overarm throw, press through ball or shoot for a long kick, or lob to put the ball down (Switch on touch). Opponents wait outside the box, and the ball is released automatically after six seconds.

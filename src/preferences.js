@@ -1,4 +1,5 @@
 import { GAMEPAD_BUTTONS } from './gamepad.js';
+import { passingMode } from './passing.js';
 
 export const KEYBOARD_PRESETS = Object.freeze({
   classic: Object.freeze({ up: 'arrowup', down: 'arrowdown', left: 'arrowleft', right: 'arrowright', pass: 's', through: 'w', shoot: 'd', lob: 'a', sprint: 'e', switch: 'q', shield: 'c', finesse: 'z', slide: 's', tackle: 'd', teammate: 'shift', jockey: 'capslock', keeperRush: 'a', skill: 'x' }),
@@ -6,6 +7,7 @@ export const KEYBOARD_PRESETS = Object.freeze({
 });
 
 export const DEFAULT_PREFERENCES = Object.freeze({
+  passingAssistance: 'assisted',
   keyboardPreset: 'classic',
   keyboard: KEYBOARD_PRESETS.classic,
   gamepad: GAMEPAD_BUTTONS,
@@ -23,6 +25,7 @@ export function normalizePreferences(value = {}) {
   const keyboardPreset = value.keyboardPreset === 'wasd' ? 'wasd' : 'classic';
   const preset = KEYBOARD_PRESETS[keyboardPreset];
   return {
+    passingAssistance: passingMode(value.passingAssistance),
     keyboardPreset,
     keyboard: Object.fromEntries(Object.keys(preset).map(action => [action, typeof value.keyboard?.[action] === 'string' ? value.keyboard[action].toLowerCase() : preset[action]])),
     gamepad: Object.fromEntries(Object.entries(GAMEPAD_BUTTONS).map(([action, index]) => [action, Number.isInteger(value.gamepad?.[action]) && value.gamepad[action] >= 0 && value.gamepad[action] <= 16 ? value.gamepad[action] : index])),

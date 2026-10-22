@@ -28,6 +28,7 @@ import { plantControlFoot, placeSlideFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
 import { receivingPath, receivingPoint, assistedReceivingInput, RECEIVING_ASSIST } from './receiving.js';
 import { throwInPlan } from './throwIns.js';
+import { planPass, passingMode } from './passing.js';
 import { createGoalRecorder, sampleGoalReplay, replayCamera, GOAL_ANGLES, CELEBRATION_SECONDS } from './goalReplay.js';
 import { advancePlayer, goalKickPosition, groundPassProfile, groundPassVelocity, skillTurn, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
 
@@ -97,6 +98,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const GOAL_WIDTH = venue.kind === 'astro' ? 5.5 : 7.32;
   const GOAL_HEIGHT = venue.kind === 'astro' ? 2.2 : 2.44;
   const isTouch = config.inputMode === 'touch';
+  const passingAssistance = passingMode(preferences.passingAssistance);
   const mount = useRef(null);
   const engine = useRef(null);
   const [score, setScore] = useState([0, 0]);
@@ -317,7 +319,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     let elapsed = 0, lastHUD = 0, goalCooldown = 0, messageUntil = 2, resetAt = 0, controlLockUntil = 0;
     let kickoffGraceUntil = difficulty.kickoffGrace, cutCamera = true, renderPending = true;
     let kickoffWaiting = true; // everyone holds position until the kickoff is taken
-    let passHold = false, shootHold = false, power = 0, pausedLocal = false, periodEnded = false, lastTouchHome = true, touchSprint = false, shieldHold = false;
+    let passHold = false, throughHold = false, shootHold = false, power = 0, pausedLocal = false, periodEnded = false, lastTouchHome = true, touchSprint = false, shieldHold = false;
     let finesseHold = false, teammateContain = false, jockeyHold = false, keeperRushHold = false, runUntil = 0;
     // Controller-only holds and modes (EA FC classic layout).
     let controlledSprint = false, strafeHold = false, containHold = false, sprintJockey = false;
@@ -611,8 +613,17 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // What a strike at this power would do: where it goes, how high, how fast.
     function setPiecePlan(strength) {
       const piece = setPiece, r = piece.reticle;
+      if (piece.deliveryPlan) return piece.deliveryPlan;
       if (piece.restart.type === 'throwIn') return throwInPlan(piece.restart.spot, r, strength, { length: LENGTH, width: WIDTH });
       const button = piece.button || (piece.mode === 'shot' ? 'k' : 'l');
+      if (passingAssistance !== 'assisted' && piece.restart.type !== 'penalty' && (button === 'j' || button === 'l' || piece.mode === 'cross')) {
+        const delivery = planPass({ mode: passingAssistance, origin: { x: ball.position.x, y: ball.position.y, z: ball.position.z },
+          direction: { x: r.x - ball.position.x, z: r.z - ball.position.z }, power: strength,
+          players: team(true).map(p => ({ ...p, home: true })), opponents: team(false, true), controlled, surface: venue.surface,
+          lofted: button !== 'j', crossing: piece.restart.type === 'corner' });
+        return { target: delivery.destination, height: button === 'j' ? .15 : 1.4, speed: delivery.speed,
+          spin: () => delivery.spin, style: 'none', ground: button === 'j', velocity: delivery.velocity, directed: true, receiver: delivery.receiver };
+      }
       const distance = Math.hypot(r.x - ball.position.x, r.z - ball.position.z);
       const style = spinStyle(piece.gesture);
       const target = { x: r.x, z: r.z };
@@ -659,11 +670,12 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const plan = setPiecePlan(previewStrength());
       if (plan.ground) { aimReticle.position.set(plan.target.x, 0.05, plan.target.z); aimReticle.rotation.set(-Math.PI / 2, 0, 0); }
       if (plan.thrown) aimReticle.position.set(plan.target.x, 0.05, plan.target.z);
-      const launch = plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, plan.origin);
+      const launch = plan.velocity ? { velocity: plan.velocity, spin: plan.spin(), distance: Math.hypot(plan.target.x - ball.position.x, plan.target.z - ball.position.z) }
+        : plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, plan.origin);
       const path = plan.ground ? Array.from({ length: AIM_DOTS + 1 }, (_, i) => ({ x: THREE.MathUtils.lerp(ball.position.x, plan.target.x, i / AIM_DOTS),
         y: BALL_RADIUS, z: THREE.MathUtils.lerp(ball.position.z, plan.target.z, i / AIM_DOTS) }))
         : flight(plan.origin || { x: ball.position.x, y: ball.position.y, z: ball.position.z }, launch.velocity, launch.spin,
-          { distance: launch.distance + (setPiece.mode === 'shot' ? 0.5 : 0), maxTime: 3.5 }).points;
+          { distance: plan.directed ? Infinity : launch.distance + (setPiece.mode === 'shot' ? 0.5 : 0), maxTime: 3.5 }).points;
       for (let i = 0; i < AIM_DOTS; i++) {
         const point = path[Math.min(path.length - 1, Math.round((i + 1) / AIM_DOTS * (path.length - 1)))];
         dotMatrix.makeTranslation(point.x, Math.max(0.06, point.y), point.z);
@@ -683,24 +695,25 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         verdict = off < 0.07 ? 'GREEN TIMING · ' : off < 0.18 ? '' : piece.timing < 0 ? 'EARLY · ' : 'LATE · ';
       }
       const distance = Math.hypot(plan.target.x - ball.position.x, plan.target.z - ball.position.z);
-      const spread = plan.thrown ? 0 : (0.3 + distance * 0.014) * accuracy / teamAbility;
+      const spread = plan.thrown || plan.directed ? 0 : (0.3 + distance * 0.014) * accuracy / teamAbility;
       const target = { x: plan.target.x, z: plan.target.z + gaussian(random) * spread };
       if (piece.mode === 'cross' && !plan.ground) target.x += gaussian(random) * spread;
       let height = plan.height + (plan.ground ? 0 : gaussian(random) * spread * 0.6);
       if (plan.style === 'knuckle') { target.z += (random() - 0.5) * 1.2; height -= random() * 0.4; } // it moves late
       const direction = new THREE.Vector3(target.x - ball.position.x, 0, target.z - ball.position.z).normalize();
-      const launch = plan.ground ? { velocity: { x: direction.x * plan.speed * teamAbility, y: 0.15, z: direction.z * plan.speed * teamAbility }, spin: plan.spin(direction) }
+      const launch = plan.velocity ? { velocity: plan.velocity, spin: plan.spin() }
+        : plan.ground ? { velocity: { x: direction.x * plan.speed * teamAbility, y: 0.15, z: direction.z * plan.speed * teamAbility }, spin: plan.spin(direction) }
         : solveLaunch(target, Math.max(0.15, height), plan.speed * (plan.thrown ? 1 : teamAbility), plan.spin, plan.minLift, plan.origin);
       if (plan.thrown) ball.position.set(plan.origin.x, plan.origin.y, plan.origin.z);
       ballVelocity.set(launch.velocity.x, launch.velocity.y, launch.velocity.z); spinBall(launch.spin);
-      const shot = piece.mode === 'shot' && piece.button !== 'j';
+      const shot = !plan.directed && piece.mode === 'shot' && piece.button !== 'j';
       if (restart?.type === 'penalty') keeperGuess(7);
       possessor = -1; awayCarrier = -1; passDestination = null; restart = null; setPiece = null;
       controlLockUntil = elapsed + 0.35; lastTouchHome = true;
       if (shot) { lastShooter = controlled; lastShotAt = elapsed; if (people[7].reactAt < elapsed) people[7].reactAt = elapsed + (0.24 + random() * 0.12) / difficulty.keeper; /* partly screened by the wall */ passTarget = -1; say('shot', { who: who(controlled), team: hallName(true) }); }
       else {
         // The teammate nearest the target attacks the ball.
-        const near = nearestOf(true, target.x, target.z, controlled);
+        const near = plan.directed ? plan.receiver : nearestOf(true, target.x, target.z, controlled);
         passTarget = near; passDestination = new THREE.Vector3(target.x, 0, target.z); passDeadline = elapsed + 4; events.passes++;
         if (piece.button === 'l') say('cross', { team: hallName(true) });
       }
@@ -716,51 +729,25 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const throwIn = restart?.type === 'throwIn';
       if (throwIn) ball.position.y = 1.8;
       const direction = aim();
-      const chargedPass = name === 'pass' && loft?.ground ? groundPassProfile(loft.power) : null;
-      if (chargedPass) speed = chargedPass.speed;
       possessor = -1; awayCarrier = -1; passTarget = -1; passDestination = null; restart = null;
       controlLockUntil = elapsed + 0.35;
-      let crossing = false;
+      let crossing = false, delivery = null;
       if (name === 'pass' || name === 'goalkeeperPass' || name === 'chip') {
-        crossing = name === 'chip' && Math.abs(ball.position.z) > WIDTH * 0.27 && ball.position.x > LENGTH * 0.08;
-        // A cross goes to the zone the stick points at: near post, penalty spot
-        // or far post. The teammate nearest that zone attacks it.
+        crossing = name === 'chip' && Math.abs(ball.position.z) > WIDTH * .27 && ball.position.x > LENGTH * .08;
         const side = Math.sign(ball.position.z) || 1;
         const zones = [{ x: LENGTH / 2 - 4.5, z: side * 2.2 }, { x: LENGTH / 2 - 8, z: 0 }, { x: LENGTH / 2 - 5.5, z: -side * 3.2 }];
-        const crossZone = crossing ? zones.reduce((best, zone) => {
-          const bearing = (zone.x - ball.position.x) * direction.x + (zone.z - ball.position.z) * direction.z;
-          const score = bearing / Math.hypot(zone.x - ball.position.x, zone.z - ball.position.z);
+        const zone = crossing ? zones.reduce((best, zone) => {
+          const score = ((zone.x - ball.position.x) * direction.x + (zone.z - ball.position.z) * direction.z) / Math.hypot(zone.x - ball.position.x, zone.z - ball.position.z);
           return !best || score > best.score ? { ...zone, score } : best;
         }, null) : null;
-        passTarget = crossing ? nearestOf(true, crossZone.x, crossZone.z, controlled)
-          : pickPassTarget(people.map((teammate, index) => ({ index, home: teammate.home && !teammate.sentOff, keeper: teammate.keeper,
-            x: teammate.mesh.position.x, z: teammate.mesh.position.z })), person.mesh.position, direction, controlled, team(false, true), chargedPass ? { maxDistance: chargedPass.range + 3, preferredDistance: chargedPass.range } : {});
-        // A goal kick, or a lofted ball toward nobody: the power bar sets the distance.
-        const byPower = name === 'chip' && loft && loft.power > 0.08 && (loft.goalKick || passTarget < 0);
-        if (byPower) {
-          const reach = loft.goalKick ? 22 + loft.power * 30 : 14 + loft.power * 30;
-          passDestination = ball.position.clone().setY(0).addScaledVector(direction, reach);
-          passDestination.x = clamp(passDestination.x, -LENGTH / 2 + 2, LENGTH / 2 - 2); passDestination.z = clamp(passDestination.z, -WIDTH / 2 + 2, WIDTH / 2 - 2);
-          // Whoever is nearest the landing spot goes for it.
-          const near = nearestOf(true, passDestination.x, passDestination.z, controlled);
-          passTarget = near >= 0 && people[near].mesh.position.distanceTo(passDestination) < 9 ? near : -1;
-          crossing = false;
-        } else if (passTarget >= 0) {
-          const target = people[passTarget].mesh.position.clone();
-          if (crossing) target.set(crossZone.x, 0, crossZone.z);
-          else {
-            target.x += people[passTarget].motion.vx * Math.min(0.7, target.distanceTo(ball.position) / speed);
-            target.z += people[passTarget].motion.vz * Math.min(0.7, target.distanceTo(ball.position) / speed);
-          }
-          if (name === 'goalkeeperPass') target.x += 2.5;
-          passDestination = target.clone();
-          direction.copy(target).sub(ball.position).setY(0).normalize();
-          speed = crossing ? Math.min(27, Math.max(18, target.distanceTo(ball.position) * 0.64))
-            : name === 'chip' ? Math.min(21, Math.max(speed, 8 + target.distanceTo(ball.position) * 0.36))
-            : chargedPass ? chargedPass.speed : Math.max(speed, groundPassSpeed(Math.hypot(target.x - ball.position.x, target.z - ball.position.z), venue.surface, name === 'goalkeeperPass' ? 3.5 : 4.5));
-          if (crossing) lift = Math.min(7, Math.max(4, target.distanceTo(ball.position) * 0.16));
-        }
-        if (chargedPass && !passDestination) passDestination = ball.position.clone().addScaledVector(direction, chargedPass.range).setY(0);
+        delivery = planPass({ mode: passingAssistance, origin: { x: ball.position.x, y: ball.position.y, z: ball.position.z },
+          direction, power: loft?.power ?? (name === 'chip' ? .45 : name === 'goalkeeperPass' ? .4 : 0),
+          players: team(true).map(p => ({ ...p, home: true, keeper: people[p.index].keeper })), opponents: team(false, true),
+          controlled, surface: venue.surface, lofted: name === 'chip', crossing, through: name === 'goalkeeperPass', zone });
+        direction.set(delivery.direction.x, 0, delivery.direction.z);
+        speed = delivery.speed; lift = delivery.lift;
+        passTarget = delivery.receiver;
+        passDestination = new THREE.Vector3(delivery.destination.x, 0, delivery.destination.z);
         passDeadline = elapsed + 4; events.passes++;
       }
       // Finesse shots curl back toward the middle of the goal; crosses curl in
@@ -768,17 +755,12 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const kind = crossing ? 'cross' : name === 'chip' ? 'chip' : name === 'pass' || name === 'goalkeeperPass' ? 'pass'
         : name === 'scissor' || name === 'powerShot' ? 'powerShot' : name === 'chipShot' ? 'chip' : finesseHold ? 'finesse' : 'shot';
       const towardMiddle = -(Math.abs(goalLineZ(direction, LENGTH / 2)) > 0.3 ? goalLineZ(direction, LENGTH / 2) : ball.position.z || 1);
-      spinBall(spinFor(kind, direction, kind === 'cross' ? -(ball.position.z || 1) : towardMiddle));
-      if (name === 'chip' && passDestination) {
-        // ◯ is always in the air: a cross arrives at head height, a lofted pass
-        // drops at the receiver's feet. More power flies flatter and quicker;
-        // a goal kick rises higher the harder it is struck.
-        const distance = Math.max(4, Math.hypot(passDestination.x - ball.position.x, passDestination.z - ball.position.z));
-        const strength = loft?.power > 0.08 ? loft.power : 0.45;
-        const hang = loft?.goalKick ? 1.2 + distance * 0.03 : crossing ? clamp(1.1 + distance * 0.025, 1.3, 1.9) : clamp(0.9 + distance * 0.035, 1.1, 2.6);
-        const flightTime = hang * (loft?.goalKick ? 1 : 1.15 - strength * 0.3);
-        launchTo(passDestination, crossing ? 1.5 : 0.35, clamp(distance / flightTime * (1.05 + distance * 0.005), 8, 32) * teamAbility, crossing ? 'cross' : 'chip', crossing ? -(ball.position.z || 1) : 0);
-        if (ballVelocity.y < 3) ballVelocity.y = 3; // never along the ground
+      spinBall(delivery ? delivery.spin : spinFor(kind, direction, kind === 'cross' ? -(ball.position.z || 1) : towardMiddle));
+      if (delivery && name === 'chip') {
+        if (passingAssistance === 'assisted' && passTarget >= 0) {
+          launchTo(passDestination, crossing ? 1.5 : .35, speed * teamAbility, crossing ? 'cross' : 'chip', crossing ? -(ball.position.z || 1) : 0);
+          ballVelocity.y = Math.max(3, ballVelocity.y);
+        } else ballVelocity.set(delivery.velocity.x, delivery.velocity.y, delivery.velocity.z);
       } else       if (shot) {
         // Shots are aimed at the goal mouth (src/shooting.js), chips dropped under the bar.
         const goalX = LENGTH / 2;
@@ -795,8 +777,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         }
         // The keeper needs a moment to read the strike.
         people[7].reactAt = elapsed + (0.2 + random() * 0.12) / difficulty.keeper;
-      } else if (chargedPass) {
-        const launch = groundPassVelocity(speed, direction, person.motion, teamAbility);
+      } else if (delivery) {
+        const launch = passingAssistance === 'manual' ? delivery.velocity : groundPassVelocity(speed, direction, person.motion, teamAbility);
         ballVelocity.set(launch.x, launch.y, launch.z);
       } else { ballVelocity.copy(direction.multiplyScalar(speed * teamAbility)); ballVelocity.y = lift; }
       if (throwIn) { ballVelocity.y = Math.max(2, ballVelocity.y); action(person, 'throwIn', true); }
@@ -824,6 +806,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // otherwise the best-placed free teammate.
     function keeperThrowTarget(index = 0) {
       const keeper = people[index], direction = keeper.home ? inputDirection() : new THREE.Vector3();
+      if (keeper.home && passingAssistance !== 'assisted') {
+        if (passingAssistance === 'manual') return -1;
+        return planPass({ mode: passingAssistance, origin: { x: keeper.motion.x, y: 1.6, z: keeper.motion.z },
+          direction: direction.lengthSq() > .01 ? direction : forwardFromHeading(keeper.motion.heading), power: throwHold ? power : .4,
+          players: team(true).map(p => ({ ...p, home: true })), opponents: team(false, true), controlled: index, surface: venue.surface,
+          lofted: !throwHold || power >= .25, selectionOnly: true }).receiver;
+      }
       if (direction.lengthSq() > 0.01) {
         const aimed = pickPassTarget(people.map((p, i) => ({ index: i, home: p.home === keeper.home && !p.sentOff, keeper: p.keeper, x: p.motion.x, z: p.motion.z })),
           keeper.motion, direction.normalize(), index);
@@ -837,7 +826,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     function keeperDistribute(index, mode, targetIndex, strength = 0.4) {
       if (ruleTouch(index, { deliberate: true, kick: true })) return;
       const keeper = people[index], from = new THREE.Vector3(keeper.motion.x, 0, keeper.motion.z);
-      const receiver = targetIndex >= 0 ? people[targetIndex] : null;
+      let receiver = targetIndex >= 0 ? people[targetIndex] : null;
       let destination;
       if (receiver) {
         destination = new THREE.Vector3(receiver.motion.x, 0, receiver.motion.z);
@@ -848,12 +837,23 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         destination = from.clone().add(new THREE.Vector3(forward.x, 0, forward.z).multiplyScalar(38));
       }
       const direction = destination.clone().sub(from); const distance = direction.length(); direction.normalize();
-      const speed = mode === 'roll' ? groundPassSpeed(Math.max(0, distance - 0.7), venue.surface, 4)
+      let speed = mode === 'roll' ? groundPassSpeed(Math.max(0, distance - 0.7), venue.surface, 4)
         : mode === 'throw' ? clamp(9 + distance * 0.42 + strength * 3, 11, 21) : clamp(13 + distance * 0.3, 20, 27);
-      const lift = mode === 'roll' ? 0.2 : mode === 'throw' ? clamp(1.8 + distance * 0.07, 2, 4.5) : clamp(4 + distance * 0.11, 6, 10);
+      let lift = mode === 'roll' ? 0.2 : mode === 'throw' ? clamp(1.8 + distance * 0.07, 2, 4.5) : clamp(4 + distance * 0.11, 6, 10);
+      let distribution = null;
+      if (keeper.home && passingAssistance !== 'assisted') {
+        const input = inputDirection(), forward = forwardFromHeading(keeper.motion.heading);
+        distribution = planPass({ mode: passingAssistance, origin: { x: from.x, y: mode === 'roll' ? BALL_RADIUS : mode === 'throw' ? 1.6 : .35, z: from.z },
+          direction: input.lengthSq() > .01 ? input : forward, power: strength,
+          players: team(true).map(p => ({ ...p, home: true })), opponents: team(false, true), controlled: index, surface: venue.surface, lofted: mode !== 'roll' });
+        direction.set(distribution.direction.x, 0, distribution.direction.z);
+        destination.set(distribution.destination.x, 0, distribution.destination.z);
+        receiver = distribution.receiver >= 0 ? people[distribution.receiver] : null;
+        targetIndex = distribution.receiver; speed = distribution.speed; lift = distribution.lift;
+      }
       ball.position.set(from.x + direction.x * 0.7, mode === 'throw' ? 1.6 : mode === 'roll' ? BALL_RADIUS : 0.35, from.z + direction.z * 0.7);
       ballVelocity.copy(direction).multiplyScalar(speed); ballVelocity.y = lift;
-      spinBall(mode === 'kick' ? spinFor('chip', direction) : mode === 'roll' ? spinFor('pass', direction) : undefined);
+      spinBall(distribution ? distribution.spin : mode === 'kick' ? spinFor('chip', direction) : mode === 'roll' ? spinFor('pass', direction) : undefined);
       keeperHolding = -1; throwHold = false; power = 0; targetRing.visible = false; setKeeperBall(false);
       controlLockUntil = elapsed + 0.3; awayKickUntil = elapsed + 0.3; lastTouchHome = keeper.home;
       if (keeper.home) { passTarget = receiver ? targetIndex : -1; passDestination = receiver ? destination.clone() : null; passDeadline = elapsed + 4; }
@@ -927,7 +927,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // Corners, goal kicks and free kicks: the ball waits on its spot, the taker
     // stands behind it and the other side keeps its distance.
     function startRestart(type, home, spot) {
-      pendingRestart = null; pendingKick = null; pendingShot = null; passHold = false; skill = null;
+      pendingRestart = null; pendingKick = null; pendingShot = null; passHold = throughHold = false; skill = null;
       offside.clear(); lastRuleTouch = -1; lastRuleDeliberate = false; restartTouch = null; setPiece = null;
       possessor = -1; awayCarrier = -1; passTarget = -1; awayPassTarget = -1; keeperHolding = -1; setKeeperBall(false); targetRing.visible = false;
       if (type === 'freeKick' && insideBox(spot.x, spot.z, !home)) spot = { x: ownGoalX(!home) + (home ? -1 : 1) * (boxDepth + 0.8), z: spot.z };
@@ -1237,7 +1237,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       }
       if (key === 'q') { if (lastTouchHome) { runUntil = elapsed + 2; show('TEAMMATE RUN'); } else switchPlayer(); }
       if (key === 'j') { if (awayCarrier < 0 && Math.hypot(people[controlled].motion.x - ball.position.x, people[controlled].motion.z - ball.position.z) < 1.8) { passHold = true; power = 0; } else tackle(); }
-      if (key === 'i') requestKick(17, 'goalkeeperPass', 0.15);
+      if (key === 'i') { throughHold = true; power = 0; }
       if (key === 'k') {
         if (pendingShot) { if (pendingShot.style === 'normal') pendingShot.style = 'low'; return; } // second tap: low driven
         if (awayCarrier >= 0 || Math.hypot(people[controlled].motion.x - ball.position.x, people[controlled].motion.z - ball.position.z) > 1.8) tackle(); else { shootHold = true; power = 0; }
@@ -1253,6 +1253,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (setPiece) {
         if (setPiece.phase === 'charge' && key === setPiece.button) {
           setPiece.phase = 'runup'; setPiece.power = power; setPiece.strikeAt = Math.max(elapsed + 0.7, setPiece.restart.readyAt); power = 0;
+          if (passingAssistance !== 'assisted' && setPiece.restart.type !== 'throwIn') {
+            const plan = setPiecePlan(setPiece.power); if (plan.directed) setPiece.deliveryPlan = plan;
+          }
           if (key === 'j' && setPiece.restart.type !== 'throwIn') setPiece.deliveryTarget = setPiecePlan(setPiece.power).target;
           setPiece.runupFrom = { x: people[controlled].motion.x, z: people[controlled].motion.z };
           action(people[controlled], setPiece.restart.type === 'throwIn' ? 'idle' : 'jog', false);
@@ -1263,6 +1266,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         throwHold = false;
         if (keeperHolding === 0 && !pausedLocal) keeperDistribute(0, power < 0.25 ? 'roll' : 'throw', keeperTarget >= 0 ? keeperTarget : keeperThrowTarget(), power);
         power = 0; return;
+      }
+      if (key === 'i' && throughHold) {
+        throughHold = false; const charge = power; power = 0;
+        if (!pausedLocal && !pendingRestart) requestKick(groundPassProfile(charge).speed, 'goalkeeperPass', 0, null, { ground: true, power: charge });
+        return;
       }
       if (key === 'j' && passHold) {
         passHold = false; const charge = power; power = 0;
@@ -1323,7 +1331,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     function clearInput() {
       keys.clear(); heldKeys.clear(); touchAxis.x = 0; touchAxis.z = 0; padAxis.x = 0; padAxis.z = 0;
-      touchSprint = shieldHold = passHold = shootHold = lobHold = finesseHold = teammateContain = jockeyHold = keeperRushHold = false;
+      touchSprint = shieldHold = passHold = throughHold = shootHold = lobHold = finesseHold = teammateContain = jockeyHold = keeperRushHold = false;
       controlledSprint = strafeHold = containHold = sprintJockey = throwHold = false;
       pendingShot = null; pendingKick = null; power = 0; shotStyle = 'normal'; padWant = {};
       if (setPiece?.phase === 'charge') { setPiece.phase = 'aim'; setPiece.button = null; }
@@ -1332,6 +1340,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (setPiece?.phase === 'charge' && setPiece.button === key) { setPiece.phase = 'aim'; setPiece.button = null; power = 0; }
       if (key === 'k') { shootHold = false; pendingShot = null; if (pendingKick?.shot) pendingKick = null; power = 0; }
       else if (key === 'l') { lobHold = false; if (pendingKick?.name === 'chip') pendingKick = null; power = 0; }
+      else if (key === 'i') { throughHold = false; if (pendingKick?.name === 'goalkeeperPass') pendingKick = null; power = 0; }
       else if (key === 'j') { passHold = false; throwHold = false; if (pendingKick?.name === 'pass') pendingKick = null; power = 0; }
       else releaseAction(key);
     }
@@ -1396,6 +1405,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           if (pressed('cross')) pressAction('j');
           if (released('cross')) releaseAction('j');
           if (pressed('triangle')) pressAction('i');
+          if (released('triangle')) releaseAction('i');
           if (pressed('circle')) pressAction('l');
           if (released('circle')) releaseAction('l');
           if (pressed('square')) {
@@ -1447,7 +1457,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       setPieceCam = null;
       offside.clear(); lastRuleTouch = -1; lastRuleDeliberate = false; restartTouch = null;
       carryOwner = -1; ballControl = createBallControl(elapsed); pendingKick = null;
-      kickoffHome = home; nextKickoffHome = true; slideUntil = 0; sliding = null; skill = null; pendingRestart = null; passHold = false; pendingShot = null; setPiece = null;
+      kickoffHome = home; nextKickoffHome = true; slideUntil = 0; sliding = null; skill = null; pendingRestart = null; passHold = throughHold = false; pendingShot = null; setPiece = null;
       people.forEach(person => {
         person.downUntil = 0; person.getUpAt = 0; person.slideState = null; person.slideRecoveryUntil = 0; person.slideStandAt = 0;
         if (import.meta.env.DEV) person.fixtureFreezeUntil = 0;
@@ -1857,7 +1867,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           return;
         }
         if (messageUntil && elapsed > messageUntil) { setMessage(''); messageUntil = 0; }
-        if (passHold || shootHold || throwHold || lobHold || setPiece?.phase === 'charge') power = Math.min(1, power + dt / 1.2);
+        if (passHold || throughHold || shootHold || throwHold || lobHold || setPiece?.phase === 'charge') power = Math.min(1, power + dt / 1.2);
         if (pendingShot && elapsed >= pendingShot.at) {
           const { power: strength, style } = pendingShot; pendingShot = null;
           if (style === 'chip') requestKick(0, 'chipShot', 0, { power: strength, style });
@@ -2009,8 +2019,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           if (holding) {
             keeperTarget = keeperThrowTarget();
             const target = people[keeperTarget];
-            const marked = team(false).some(o => Math.hypot(o.x - target.motion.x, o.z - target.motion.z) < 3.5);
-            targetRing.visible = true; targetRing.position.set(target.motion.x, 0.03, target.motion.z);
+            const marked = target && team(false).some(o => Math.hypot(o.x - target.motion.x, o.z - target.motion.z) < 3.5);
+            targetRing.visible = Boolean(target); if (target) targetRing.position.set(target.motion.x, 0.03, target.motion.z);
             targetRing.material.color.set(marked ? 0xff7a1a : 0xffc20e);
             if (elapsed - keeperHoldStart > 6) { show('6 SECONDS', 1); say('sixSeconds'); keeperDistribute(0, 'throw', keeperTarget, 0.3); }
           }
@@ -2361,7 +2371,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         snapshot: () => ({ elapsed, score: [...goals], paused: pausedLocal, periodEnded, sliding: Boolean(sliding),
           goalSequence: goalSequence && { phase: goalSequence.phase, age: goalSequence.age, angle: goalSequence.angle, playTime: goalSequence.playTime,
             scorer: goalSequence.scorer, teammates: goalSequence.teammates, frameCount: goalSequence.frames.length, firstBall: goalSequence.frames[0]?.ball },
-          input: { passHold, touchSprint, shieldHold, shootHold, lobHold, jockeyHold, containHold, controlledSprint, strafeHold, sprintJockey, teammateContain, keeperRushHold, power },
+          passingAssistance, input: { passHold, throughHold, touchSprint, shieldHold, shootHold, lobHold, jockeyHold, containHold, controlledSprint, strafeHold, sprintJockey, teammateContain, keeperRushHold, power },
           possessor, awayCarrier, keeperHolding, passTarget, receivingGuidance, passDestination: passDestination?.toArray(), offside: offside.snapshot(), restartTouch: restartTouch && { ...restartTouch }, setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, pendingRestart: pendingRestart && { ...pendingRestart }, skill: skill && { ...skill }, started: ready.started,
           physicsReady: Boolean(physics), clipsLoaded: Object.keys(clips).length, events: { ...events },
           ball: ball.position.toArray(), velocity: ballVelocity.toArray(), spin: physics?.spin(),
@@ -2394,9 +2404,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           if (!setPiece) return null;
           const plan = setPiecePlan(previewStrength());
           const origin = plan.origin || { x: ball.position.x, y: ball.position.y, z: ball.position.z };
-          const launch = plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, origin);
+          const launch = plan.velocity ? { velocity: plan.velocity, spin: plan.spin(), distance: Math.hypot(plan.target.x - origin.x, plan.target.z - origin.z) }
+            : plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, origin);
           return { visible: aimDots.visible, target: plan.target, origin, launch,
-            points: launch ? flight(origin, launch.velocity, launch.spin, { distance: launch.distance, maxTime: 3.5 }).points : [] };
+            points: launch ? flight(origin, launch.velocity, launch.spin, { distance: plan.directed ? Infinity : launch.distance, maxTime: 3.5 }).points : [] };
         },
         press: key => { const wasPaused = pausedLocal; pausedLocal = false; pressAction(key); pausedLocal = wasPaused; },
         release: key => { const wasPaused = pausedLocal; pausedLocal = false; releaseAction(key); pausedLocal = wasPaused; },
@@ -2487,7 +2498,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const phase = setPiece ? setPiece.restart.type === 'throwIn' ? 'throwIn' : 'setPiece' : restart?.type === 'penalty' && !restart.home ? 'penaltyKeeper' : lastTouchHome ? 'attack' : 'defend';
       if (phase !== shownPhase) { shownPhase = phase; setPadPhase(phase); }
       if (powerMeter.current) {
-        const charging = passHold || shootHold || throwHold || lobHold || setPiece?.phase === 'charge';
+        const charging = passHold || throughHold || shootHold || throwHold || lobHold || setPiece?.phase === 'charge';
         powerMeter.current.style.opacity = charging ? 1 : 0;
         if (charging) powerMeter.current.firstChild.style.width = `${Math.round(power * 100)}%`;
       }
@@ -2646,7 +2657,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       window.removeEventListener('pointerdown', unlockSpeech); window.removeEventListener('keydown', unlockSpeech);
       host.removeChild(renderer.domElement); renderer.dispose(); engine.current = null;
     };
-  }, [config.home, config.away, config.formation, config.venueId, config.difficulty, config.device, cameraMode, kits.home, kits.away, isTouch, preferences.keyboard, preferences.gamepad]);
+  }, [config.home, config.away, config.formation, config.venueId, config.difficulty, config.device, cameraMode, kits.home, kits.away, isTouch, passingAssistance, preferences.keyboard, preferences.gamepad]);
 
   useEffect(() => {
     if (seconds > 0) return;

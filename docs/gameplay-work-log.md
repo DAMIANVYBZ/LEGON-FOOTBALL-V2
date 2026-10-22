@@ -545,3 +545,29 @@ Update the receiving regression checks and current mechanics documentation.
 Verified: all 122 automated tests and 74 receiving/throw-in/gameplay browser
 checks pass across desktop and phone at the 70% setting; production build
 passes. Results are in `/workspace/receiving-70-audit/`.
+
+## 2026-10-22 — Assisted, Semi and Manual passing/crossing settings
+
+Add Settings → Gameplay with three saved modes. Assisted selects/leads a
+recipient and weights the delivery for distance; Semi limits selection to the
+aimed lane and uses partial correction, preserving strong charge influence;
+Manual launches along the input direction with held-button power and no target
+snapping or automatic side curl. Apply the selected behavior to ordinary and
+through passes, lobs/crosses, set-piece passing and keeper distributions. Default
+existing preferences to Assisted and preserve other saved controls/display
+settings. Keep receiving assistance at its separately requested 70% setting.
+
+Give through passes a held power/release action on keyboard and controller;
+clear that charge on blur, cancel, restart and reset. Use the selected delivery
+plan for Semi/Manual set-piece previews and release, without adding random aim
+or power compensation. Handle keeper possession safely when Manual has no
+selected teammate. See [passing mode details](passing-assistance-modes.md).
+
+Verified: all 127 automated tests; 78 mode-specific browser checks plus 34
+existing gameplay checks across desktop and phone; saved mode restoration after
+reload/new match; native Manual keyboard/controller through passes and charged
+two-finger phone passing; 74 receiving/throw-in regressions; controller charging,
+sprint/slide/spin/halftime and moving-pass checks; 51 event groups and first-half
+completion on Sarbah/Astro/Oval; production desktop and phone smoke checks.
+Build and Cloudflare packaging of 51 assets pass. Detailed reports and Settings
+screenshots are in `/workspace/passing-modes-audit/`.

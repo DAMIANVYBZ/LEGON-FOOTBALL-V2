@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { KEYBOARD_PRESETS, normalizePreferences } from '../src/preferences.js';
 
+test('passing assistance defaults safely and retains all three saved gameplay modes', () => {
+  assert.equal(normalizePreferences().passingAssistance, 'assisted');
+  assert.equal(normalizePreferences({ passingAssistance: 'invalid' }).passingAssistance, 'assisted');
+  for (const mode of ['assisted', 'semi', 'manual']) assert.equal(normalizePreferences({ passingAssistance: mode }).passingAssistance, mode);
+});
+
 test('classic arrows leave S W D A available for football actions', () => {
   const prefs = normalizePreferences();
   assert.equal(prefs.keyboard.up, 'arrowup');
