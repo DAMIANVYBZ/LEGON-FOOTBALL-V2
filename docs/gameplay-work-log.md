@@ -491,3 +491,46 @@ first-half completion on Sarbah/Astro/Oval, controller input/animation/halftime,
 and production desktop keyboard and emulated-phone multitouch/pause checks.
 Production build and Cloudflare static-asset packaging pass. Detailed artifacts
 are in `/workspace/slide-fix-audit/`.
+
+## 2026-10-22 — assisted receiving and throw-in aiming
+
+Blend 60% manual movement with 40% AI guidance while receiving. Predict a
+reachable interception point using flight, landing and rolling physics; hand
+control over before contact when assisted movement can reach it. Preserve strong
+movement away, player lock, ordinary ball control and first-touch restrictions.
+Handle short approaching passes without a late control switch. Keep corner
+attackers in the box unless a short corner is selected.
+
+Give throw-ins a movable reticle, curved overhead trajectory guide and held
+PASS power. Use the same launch calculation for guide, human release and CPU
+throws. Keep the taker stationary and the aim inside the pitch, within 22 metres.
+
+## 2026-10-22 — team celebrations and three-angle goal highlights
+
+After either team scores, have the five available outfield teammates run toward
+separate positions around the scorer and join the celebration. Allow six
+seconds, then play the recorded goal from broadcast, behind-goal and attacking
+cameras. Keep a bounded 30 Hz history of actual movement, ball flight and
+animation phases; interpolate it without rerunning match physics. Preserve the
+score and match clock, and avoid charging stamina for celebrations.
+
+Add separate SKIP CELEBRATION and SKIP REPLAY controls. Support touch/click,
+Enter/Space and gamepad actions for either scoring team. A held controller button
+advances only one stage. Pause preserves playback position; return to kickoff
+for the conceding side with gameplay actions cleared. Restore player visibility
+and animation playback when leaving the replay.
+
+Implementation and replay commands: [receiving and goal presentation](receiving-and-goal-replays.md).
+
+Verified: 122 automated tests; 32 assisted reception cases, eight throw-in
+trajectory comparisons and 34 gameplay event checks across desktop and phone;
+home/away team celebrations, all three moving replay angles, unchanged
+score/time/stamina, independent touch/keyboard/gamepad skip and pause/resume;
+51 event groups and first-half completion on Sarbah/Astro/Oval; production
+desktop keyboard and phone joystick/multitouch/pause checks. The throw-in guide
+matched the measured early flight within 0.026 m. Production build and Cloudflare
+packaging of 51 assets pass. Detailed results are in
+`/workspace/receiving-audit/verification.json`.
+Moving-pass regression also passes with full sides active, normal/R2/R1
+controller movement, keyboard sprint-pass and three-finger phone
+move+sprint+pass, with no browser errors.

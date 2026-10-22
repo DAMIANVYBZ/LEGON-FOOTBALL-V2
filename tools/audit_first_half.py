@@ -197,7 +197,9 @@ async def main(args):
                     play_started = monotonic()
                     # Leave room for the clock to stop during visible boundary restarts.
                     # periodEnded still stops the replay before a second half.
-                    for tick in range(360 if args.realtime else 240):
+                    # Goals can now include a celebration and three full replay angles.
+                    # Leave enough updates to reach halftime without starting a second half.
+                    for tick in range(600 if args.realtime else 420):
                         state = await page.evaluate('''({tick,advance}) => {
                           const d=window.__footballDebug,s=d.snapshot();
                           if(s.periodEnded)return s;

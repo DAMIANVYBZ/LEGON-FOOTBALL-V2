@@ -26,6 +26,9 @@ import { slideAim, slideVelocity, slideBallContact, slideDeflection, sweepContac
 import { createBallControl, footTouch, controlStrideLimit, controlStrideInput, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
 import { plantControlFoot, placeSlideFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
+import { receivingPath, receivingPoint, assistedReceivingInput, RECEIVING_ASSIST } from './receiving.js';
+import { throwInPlan } from './throwIns.js';
+import { createGoalRecorder, sampleGoalReplay, replayCamera, GOAL_ANGLES, CELEBRATION_SECONDS } from './goalReplay.js';
 import { advancePlayer, goalKickPosition, groundPassProfile, groundPassVelocity, skillTurn, canWinTackle, canReceivePass, receivingInput, forwardFromHeading, meshYawForHeading, pickPassTarget, pitchExit, supportPosition } from './gameplay.js';
 
 const BALL_RADIUS = 0.11;
@@ -97,6 +100,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const mount = useRef(null);
   const engine = useRef(null);
   const [score, setScore] = useState([0, 0]);
+  const [goalMoment, setGoalMoment] = useState(null);
   const [seconds, setSeconds] = useState(Math.ceil(config.matchMinutes * 30));
   const [half, setHalf] = useState(1);
   const [paused, setPaused] = useState(false);
@@ -276,7 +280,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         mesh.position.set(spawn[0], 0, spawn[1]); playerRoot.add(mesh);
         const heading = home ? 0 : Math.PI;
         mesh.rotation.y = meshYawForHeading(heading);
-        people.push({ mesh, home, keeper: index === 0, role: index, spawn, actionName: '', actionUntil: 0, stamina: 1,
+        people.push({ index: people.length, mesh, home, keeper: index === 0, role: index, spawn, actionName: '', actionUntil: 0, stamina: 1,
           nextTackleAt: 0, saveUntil: 0, diveDirection: 0, motion: { x: spawn[0], z: spawn[1], vx: 0, vz: 0, heading } });
       });
     }
@@ -324,6 +328,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     let setPiece = null, setPieceCam = null; // the set piece you are aiming, and the camera framing it
     let lobHold = false, pendingShot = null, aimOverride = null; // a released shot waits a moment for a second ▢ tap (low driven)
     let passTarget = -1, passDeadline = 0, passDestination = null;
+    let receivingForecast = null, receivingGuidance = null;
+    const goalRecorder = createGoalRecorder();
+    let goalSequence = null, replayPose = null;
     const offside = createOffsideTracker();
     let lastRuleTouch = -1, lastRuleDeliberate = false, restartTouch = null;
     let carryOwner = -1, ballControl = createBallControl(), pendingKick = null;
@@ -410,6 +417,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       setAxis(x, z) { touchAxis.x = x; touchAxis.z = z; },
       press(key) { pressAction(key); },
       release(key) { releaseAction(key); },
+      skipGoal() { if (!pausedLocal) skipGoalSequence(); },
       cancel(key) { cancelAction(key); },
       whistle(kind) { sound.whistle(kind); },
       kickoff() { people.forEach(person => { person.stamina = Math.min(1, person.stamina + 0.5); }); reset(false); say('secondHalf'); },
@@ -477,6 +485,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       });
     }
     function animatePlayers(dt) {
+      if (goalSequence?.phase === 'replay') return;
       mixers.forEach(mixer => mixer.update(dt));
       for (const person of people) if (elapsed < (person.slideRecoveryUntil || 0)) poseSlidePlayer(person, 1);
       for (const person of people) if (person.slideStandAt && elapsed < person.slideStandAt + SLIDE_TIMING.getUp) {
@@ -552,8 +561,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     // The launch velocity and spin (spinOf(direction)) for a ball from where it
     // lies to pass over target at height.
-    function solveLaunch(target, height, speed, spinOf, minLift = 0) {
-      const from = { x: ball.position.x, y: ball.position.y, z: ball.position.z };
+    function solveLaunch(target, height, speed, spinOf, minLift = 0, origin = ball.position) {
+      const from = { x: origin.x, y: origin.y, z: origin.z };
       const distance = Math.max(1, Math.hypot(target.x - from.x, target.z - from.z));
       const wanted = Math.atan2(target.z - from.z, target.x - from.x);
       let angle = wanted, spin, lift = 0;
@@ -570,7 +579,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       return { velocity: { x: Math.cos(angle) * speed, y: lift, z: Math.sin(angle) * speed }, spin, distance };
     }
 
-    // ---- Set pieces you take: corners and free kicks ----
+    // ---- Set pieces you take, including overhead throw-ins ----
     // The left stick moves the reticle, a held button sets the power (▢ shot,
     // ◯ cross or lofted, ✕ pass), then during the run-up the right stick adds
     // spin and a second ▢ tap at the strike is timed finishing.
@@ -579,14 +588,16 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const distance = Math.hypot(goalX - spot.x, spot.z);
       const shot = restart.type === 'penalty' || (restart.type === 'freeKick' && distance < 30);
       const reticle = shot ? new THREE.Vector3(goalX, 1.6, -side * (GOAL_WIDTH / 2 - 1))
+        : restart.type === 'throwIn' ? new THREE.Vector3(clamp(spot.x + 8, -goalX + 1, goalX - 1), 0, spot.z - side * 10)
         : restart.type === 'corner' ? new THREE.Vector3(goalX - 6, 0, 0)
         : new THREE.Vector3(Math.min(goalX - 8, spot.x + 26), 0, spot.z * 0.4);
       setPiece = { restart, mode: shot ? 'shot' : 'cross', reticle, button: null, phase: 'aim', power: 0, strikeAt: 0, gesture: [], timing: null, previewAt: 0 };
       restart.autoAt = elapsed + 30;
       // Stand back from the ball for the run-up.
       const taker = people[restart.taker], facing = Math.atan2(reticle.z - spot.z, reticle.x - spot.x);
-      const forward = forwardFromHeading(facing);
-      Object.assign(taker.motion, { x: spot.x - forward.x * 2.3, z: spot.z - forward.z * 2.3, heading: facing, vx: 0, vz: 0 });
+      const forward = forwardFromHeading(facing), throwing = restart.type === 'throwIn';
+      Object.assign(taker.motion, { x: throwing ? spot.x : spot.x - forward.x * 2.3,
+        z: throwing ? spot.z + side * 0.25 : spot.z - forward.z * 2.3, heading: facing, vx: 0, vz: 0 });
       taker.mesh.position.set(taker.motion.x, 0, taker.motion.z);
     }
     function setPieceSpin(style, direction, fallback) {
@@ -600,6 +611,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // What a strike at this power would do: where it goes, how high, how fast.
     function setPiecePlan(strength) {
       const piece = setPiece, r = piece.reticle;
+      if (piece.restart.type === 'throwIn') return throwInPlan(piece.restart.spot, r, strength, { length: LENGTH, width: WIDTH });
       const button = piece.button || (piece.mode === 'shot' ? 'k' : 'l');
       const distance = Math.hypot(r.x - ball.position.x, r.z - ball.position.z);
       const style = spinStyle(piece.gesture);
@@ -646,10 +658,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       setPiece.previewAt = elapsed + 0.05; // a few times a second is plenty
       const plan = setPiecePlan(previewStrength());
       if (plan.ground) { aimReticle.position.set(plan.target.x, 0.05, plan.target.z); aimReticle.rotation.set(-Math.PI / 2, 0, 0); }
-      const launch = plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift);
+      if (plan.thrown) aimReticle.position.set(plan.target.x, 0.05, plan.target.z);
+      const launch = plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, plan.origin);
       const path = plan.ground ? Array.from({ length: AIM_DOTS + 1 }, (_, i) => ({ x: THREE.MathUtils.lerp(ball.position.x, plan.target.x, i / AIM_DOTS),
         y: BALL_RADIUS, z: THREE.MathUtils.lerp(ball.position.z, plan.target.z, i / AIM_DOTS) }))
-        : flight({ x: ball.position.x, y: ball.position.y, z: ball.position.z }, launch.velocity, launch.spin,
+        : flight(plan.origin || { x: ball.position.x, y: ball.position.y, z: ball.position.z }, launch.velocity, launch.spin,
           { distance: launch.distance + (setPiece.mode === 'shot' ? 0.5 : 0), maxTime: 3.5 }).points;
       for (let i = 0; i < AIM_DOTS; i++) {
         const point = path[Math.min(path.length - 1, Math.round((i + 1) / AIM_DOTS * (path.length - 1)))];
@@ -670,14 +683,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         verdict = off < 0.07 ? 'GREEN TIMING · ' : off < 0.18 ? '' : piece.timing < 0 ? 'EARLY · ' : 'LATE · ';
       }
       const distance = Math.hypot(plan.target.x - ball.position.x, plan.target.z - ball.position.z);
-      const spread = (0.3 + distance * 0.014) * accuracy / teamAbility;
+      const spread = plan.thrown ? 0 : (0.3 + distance * 0.014) * accuracy / teamAbility;
       const target = { x: plan.target.x, z: plan.target.z + gaussian(random) * spread };
       if (piece.mode === 'cross' && !plan.ground) target.x += gaussian(random) * spread;
       let height = plan.height + (plan.ground ? 0 : gaussian(random) * spread * 0.6);
       if (plan.style === 'knuckle') { target.z += (random() - 0.5) * 1.2; height -= random() * 0.4; } // it moves late
       const direction = new THREE.Vector3(target.x - ball.position.x, 0, target.z - ball.position.z).normalize();
       const launch = plan.ground ? { velocity: { x: direction.x * plan.speed * teamAbility, y: 0.15, z: direction.z * plan.speed * teamAbility }, spin: plan.spin(direction) }
-        : solveLaunch(target, Math.max(0.15, height), plan.speed * teamAbility, plan.spin, plan.minLift);
+        : solveLaunch(target, Math.max(0.15, height), plan.speed * (plan.thrown ? 1 : teamAbility), plan.spin, plan.minLift, plan.origin);
+      if (plan.thrown) ball.position.set(plan.origin.x, plan.origin.y, plan.origin.z);
       ballVelocity.set(launch.velocity.x, launch.velocity.y, launch.velocity.z); spinBall(launch.spin);
       const shot = piece.mode === 'shot' && piece.button !== 'j';
       if (restart?.type === 'penalty') keeperGuess(7);
@@ -691,9 +705,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         if (piece.button === 'l') say('cross', { team: hallName(true) });
       }
       physics?.releaseFrom(controlled);
-      action(taker, piece.button === 'j' ? 'pass' : 'kick', true, true); sound.kick(Math.min(1, plan.speed / 30));
+      action(taker, plan.thrown ? 'throwIn' : piece.button === 'j' ? 'pass' : 'kick', true, !plan.thrown); sound.kick(Math.min(1, plan.speed / 30));
       const spinName = { dip: 'DIP', curlLeft: 'CURL', curlRight: 'CURL', knuckle: 'KNUCKLEBALL' }[plan.style];
-      show(`${verdict}${spinName ? spinName + ' · ' : ''}${shot ? (piece.restart.type === 'penalty' ? 'PENALTY KICK!' : 'FREE KICK!') : piece.button === 'j' ? 'SHORT PASS' : 'CROSS!'}`, 1.2);
+      show(plan.thrown ? 'THROW IN' : `${verdict}${spinName ? spinName + ' · ' : ''}${shot ? (piece.restart.type === 'penalty' ? 'PENALTY KICK!' : 'FREE KICK!') : piece.button === 'j' ? 'SHORT PASS' : 'CROSS!'}`, 1.2);
     }
     function kick(speed, name = 'kick', lift = 0.15, shot = null, loft = null) {
       const person = people[controlled];
@@ -883,7 +897,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         }
       }
       const direction = destination.clone().sub(from).normalize();
-      if (kind === 'shoot' || kind === 'cross') {
+      if (throwIn) {
+        const plan = throwInPlan(restart.spot, destination, 0.5, { length: LENGTH, width: WIDTH });
+        destination.set(plan.target.x, 0, plan.target.z);
+        ball.position.set(plan.origin.x, plan.origin.y, plan.origin.z);
+        const launch = solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, plan.origin);
+        ballVelocity.set(launch.velocity.x, launch.velocity.y, launch.velocity.z); spinBall(launch.spin);
+      } else if (kind === 'shoot' || kind === 'cross') {
         // CPU and human kicks obey the same drag, spin and target-height model.
         launchTo(destination, height, speed, kind === 'shoot' ? 'cpuShot' : 'cross', -(ball.position.z || 1));
       } else {
@@ -900,7 +920,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       physics?.releaseFrom(index);
       count(`cpu ${kind}`);
       action(person, kind === 'shoot' ? 'kick' : kind === 'cross' ? 'chip' : 'pass', true, true);
-      if (throwIn) { ballVelocity.y = Math.max(2, ballVelocity.y); action(person, 'throwIn', true); }
+      if (throwIn) action(person, 'throwIn', true);
       sound.kick(kind === 'shoot' ? 0.85 : kind === 'cross' ? 0.6 : 0.35);
       restart = null;
     }
@@ -1193,6 +1213,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       say('tackle', { who: who(controlled), team: hallName(true) });
     }
     function pressAction(key) {
+      if (goalSequence) { if (!pausedLocal && ['j', 'k', 'l', 'i'].includes(key)) skipGoalSequence(); return; }
       if (key === 'shift') { touchSprint = true; return; }
       if (pausedLocal || pendingRestart) return;
       if (setPiece && (key === 'k' || key === 'l' || key === 'j')) {
@@ -1227,13 +1248,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (key === 'u') tackle('tackleAlternate', 'slide');
     }
     function releaseAction(key) {
+      if (goalSequence) return;
       if (key === 'shift') { touchSprint = false; return; }
       if (setPiece) {
         if (setPiece.phase === 'charge' && key === setPiece.button) {
           setPiece.phase = 'runup'; setPiece.power = power; setPiece.strikeAt = Math.max(elapsed + 0.7, setPiece.restart.readyAt); power = 0;
-          if (key === 'j') setPiece.deliveryTarget = setPiecePlan(setPiece.power).target;
+          if (key === 'j' && setPiece.restart.type !== 'throwIn') setPiece.deliveryTarget = setPiecePlan(setPiece.power).target;
           setPiece.runupFrom = { x: people[controlled].motion.x, z: people[controlled].motion.z };
-          action(people[controlled], 'jog', false);
+          action(people[controlled], setPiece.restart.type === 'throwIn' ? 'idle' : 'jog', false);
         }
         if (key === 'k' || key === 'l' || key === 'j') return;
       }
@@ -1288,6 +1310,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const key = event.key.toLowerCase();
       if (Object.values(keyboard).includes(key) || key === 'escape' || key === ' ') event.preventDefault();
       if (!ready.started) return;
+      if (goalSequence && !pausedLocal && (key === 'enter' || key === ' ')) {
+        event.preventDefault(); if (!event.repeat) skipGoalSequence(); return;
+      }
       if (key === 'escape' || key === ' ') { if (!event.repeat) state.togglePause(); return; }
       keys.add(key);
       if (!event.repeat) { const actionKey = keyboardAction(key); if (actionKey) { heldKeys.set(key, actionKey); pressAction(actionKey); } }
@@ -1346,6 +1371,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         padActions = b; padWant = {}; return;
       }
       menuDirection = 0;
+      if (goalSequence) {
+        if (['cross', 'circle', 'square', 'triangle'].some(pressed)) skipGoalSequence();
+        padActions = b; padWant = {}; return;
+      }
       const attacking = lastTouchHome;
       // Held controls: applied when they start or stop, so the keyboard keeps working too.
       const want = !snapshot ? {} : attacking ? {
@@ -1412,6 +1441,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // the side that did not start the first half for the second).
     let kickoffHome = true, nextKickoffHome = true, kickoffTakeAt = 0;
     function reset(home = nextKickoffHome) {
+      goalSequence = replayPose = null; setGoalMoment(null); goalRecorder.clear(); goalCooldown = 0;
+      lastShooter = -1; lastShotAt = -10;
+      receivingForecast = receivingGuidance = null;
       setPieceCam = null;
       offside.clear(); lastRuleTouch = -1; lastRuleDeliberate = false; restartTouch = null;
       carryOwner = -1; ballControl = createBallControl(elapsed); pendingKick = null;
@@ -1419,7 +1451,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       people.forEach(person => {
         person.downUntil = 0; person.getUpAt = 0; person.slideState = null; person.slideRecoveryUntil = 0; person.slideStandAt = 0;
         if (import.meta.env.DEV) person.fixtureFreezeUntil = 0;
+        person.mesh.visible = !person.sentOff;
         if (person.sentOff) return;
+        if (person.currentAction) person.currentAction.paused = false;
         person.mesh.position.set(person.spawn[0], 0, person.spawn[1]);
         Object.assign(person.motion, { x: person.spawn[0], z: person.spawn[1], vx: 0, vz: 0,
           heading: person.home ? 0 : Math.PI });
@@ -1444,15 +1478,100 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     }
     function goal(homeScored) {
       setScore(previous => homeScored ? [previous[0] + 1, previous[1]] : [previous[0], previous[1] + 1]);
-      show('GOAL!', 2.2); goalCooldown = 2.5; resetAt = elapsed + 2.2; sound.goal(); feel('goal', 0.08); count(homeScored ? 'goals home' : 'goals away');
+      show('GOAL!', CELEBRATION_SECONDS); goalCooldown = 2.5; resetAt = Infinity; sound.goal(); feel('goal', 0.08); count(homeScored ? 'goals home' : 'goals away');
       nextKickoffHome = !homeScored; // the side that conceded kicks off
       goals[homeScored ? 0 : 1]++;
       const scorer = lastShooter >= 0 && people[lastShooter].home === homeScored ? who(lastShooter) : '';
       say('goal', { team: hallName(homeScored), who: scorer, goalMoment: goalContext(goals, homeScored), score: scoreLine(hallName(true), hallName(false), goals) });
-      // The scorer and the nearest teammate celebrate; everyone else waits.
-      const scorers = people.filter(p => p.home === homeScored && !p.keeper)
-        .sort((a, b) => a.mesh.position.distanceToSquared(ball.position) - b.mesh.position.distanceToSquared(ball.position)).slice(0, 2);
-      for (const person of scorers) action(person, 'celebration', true);
+      const eligible = people.filter(p => p.home === homeScored && !p.sentOff && !p.keeper);
+      const scorerIndex = lastShooter >= 0 && elapsed - lastShotAt < 8 && people[lastShooter].home === homeScored ? lastShooter
+        : lastRuleTouch >= 0 && people[lastRuleTouch].home === homeScored ? lastRuleTouch
+        : eligible.sort((a, b) => a.mesh.position.distanceToSquared(ball.position) - b.mesh.position.distanceToSquared(ball.position))[0]?.index;
+      const hero = people[scorerIndex ?? (homeScored ? 5 : 12)];
+      const anchor = { x: clamp(hero.motion.x, -LENGTH / 2 + 2, LENGTH / 2 - 2), z: clamp(hero.motion.z, -WIDTH / 2 + 2, WIDTH / 2 - 2) };
+      const teammates = eligible.filter(p => p !== hero).sort((a, b) => a.mesh.position.distanceToSquared(hero.mesh.position) - b.mesh.position.distanceToSquared(hero.mesh.position)).slice(0, 5).map(p => p.index);
+      goalRecorder.push(elapsed, captureGoalFrame());
+      goalSequence = { phase: 'celebration', age: 0, at: elapsed, home: homeScored, scorer: hero.index, anchor, teammates,
+        frames: goalRecorder.clip(), angle: 0, playTime: 0, clockRemainder: elapsed - lastHUD };
+      clearInput(); possessor = awayCarrier = passTarget = awayPassTarget = -1; receivingGuidance = null;
+      people.forEach(person => { person.motion.vx = person.motion.vz = 0; if (!person.sentOff && elapsed >= (person.downUntil || 0)) idle(person); });
+      action(hero, 'celebration', false);
+      setGoalMoment({ phase: 'celebration', scorer: who(hero.index) || `PLAYER #${hero.index + 1}`, team: hallName(homeScored), angle: 0 });
+    }
+    function captureGoalFrame() {
+      return { ball: ball.position.toArray(), rotation: ball.quaternion.toArray(), players: people.map(p => ({
+        x: p.mesh.position.x, z: p.mesh.position.z, heading: p.motion.heading, action: p.actionName,
+        time: p.currentAction?.time || 0, visible: !p.sentOff })) };
+    }
+    function beginGoalReplay() {
+      if (!goalSequence) return;
+      goalSequence.phase = 'replay'; goalSequence.angle = 0; goalSequence.playTime = 0;
+      people.forEach(person => { person.mixer?.stopAllAction(); person.actionName = ''; });
+      setMessage(''); cameraShake = null; clearInput(); cutCamera = true;
+      setGoalMoment(previous => ({ ...previous, phase: 'replay', angle: 0 }));
+      applyGoalReplay();
+    }
+    function finishGoalSequence() {
+      clearInput(); lastHUD = elapsed - (goalSequence?.clockRemainder || 0); reset(nextKickoffHome); setMessage('KICK OFF');
+    }
+    function skipGoalSequence() {
+      if (!goalSequence) return;
+      if (goalSequence.phase === 'celebration') beginGoalReplay(); else finishGoalSequence();
+      renderPending = true;
+    }
+    function applyGoalReplay() {
+      const sequence = goalSequence;
+      replayPose = sampleGoalReplay(sequence.frames, sequence.playTime);
+      if (!replayPose) return;
+      ball.position.fromArray(replayPose.ball); ball.quaternion.fromArray(replayPose.rotation);
+      replayPose.players.forEach((pose, index) => {
+        const person = people[index];
+        person.mesh.visible = pose.visible; person.mesh.position.set(pose.x, 0, pose.z); person.mesh.rotation.y = meshYawForHeading(pose.heading);
+        if (person.actionName !== pose.action) person.currentAction?.stop();
+        action(person, pose.action, false);
+        if (person.currentAction) {
+          person.currentAction.stopFading().setEffectiveWeight(1);
+          person.currentAction.paused = true; person.currentAction.time = pose.time; person.mixer.update(0);
+        }
+      });
+    }
+    function updateGoalSequence(dt) {
+      const sequence = goalSequence;
+      sequence.age += dt;
+      if (sequence.phase === 'replay') {
+        sequence.playTime += dt * 0.9;
+        const duration = Math.max(0.5, sequence.frames.at(-1).t - sequence.frames[0].t);
+        if (sequence.playTime > duration + 0.45) {
+          sequence.angle++; sequence.playTime = 0; cutCamera = true;
+          if (sequence.angle >= GOAL_ANGLES) { finishGoalSequence(); return; }
+          setGoalMoment(previous => ({ ...previous, angle: sequence.angle }));
+        }
+        applyGoalReplay(); return;
+      }
+      elapsed += dt; lastHUD = elapsed;
+      const hero = people[sequence.scorer];
+      sequence.teammates.forEach((index, slot) => {
+        const person = people[index];
+        if (elapsed < (person.downUntil || 0)) return;
+        const angle = slot / sequence.teammates.length * Math.PI * 2;
+        const tx = sequence.anchor.x + Math.cos(angle) * 1.5, tz = sequence.anchor.z + Math.sin(angle) * 1.5;
+        const delta = { x: tx - person.motion.x, z: tz - person.motion.z }, gap = Math.hypot(delta.x, delta.z);
+        if (gap > 0.3) {
+          const speed = advancePlayer(person.motion, receivingInput(delta, 8.1), dt, { sprint: true }); moveAction(person, speed);
+        } else { person.motion.vx = person.motion.vz = 0; action(person, 'celebration', false); }
+        person.mesh.position.set(person.motion.x, 0, person.motion.z); person.mesh.rotation.y = meshYawForHeading(person.motion.heading);
+      });
+      action(hero, 'celebration', false);
+      if (physics) {
+        const before = ballVelocity.clone();
+        const next = physics.step(dt, ball.position, ballVelocity, people.map(p => p.mesh.position), -1);
+        ball.position.set(next.position.x, next.position.y, next.position.z); ballVelocity.set(next.velocity.x, next.velocity.y, next.velocity.z);
+        ball.quaternion.set(next.rotation.x, next.rotation.y, next.rotation.z, next.rotation.w); checkGoalContact(before);
+      }
+      if (sequence.age <= 0.7 && goalRecorder.wants(elapsed)) {
+        goalRecorder.push(elapsed, captureGoalFrame()); sequence.frames = goalRecorder.clip();
+      }
+      if (sequence.age >= CELEBRATION_SECONDS) beginGoalReplay();
     }
     function queueBoundaryRestart(type, home, spot, exit) {
       pendingRestart = { type, home, spot, at: elapsed + .85 };
@@ -1696,8 +1815,38 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         say(result === 'punch' ? 'punch' : result === 'spill' ? 'spill' : 'save', { team: hallName(person.home) });
       }
     }
+    function updateReceivingGuidance() {
+      receivingGuidance = null;
+      if (restart || pendingRestart || resetAt || keeperHolding >= 0 || possessor >= 0 || awayCarrier >= 0
+        || !lastTouchHome || passTarget < 0 || elapsed > passDeadline) { receivingForecast = null; return; }
+      const receiver = people[passTarget];
+      if (receiver.sentOff || receiver === sliding || elapsed < (receiver.downUntil || 0)) return;
+      if (!receivingForecast || receivingForecast.receiver !== passTarget || elapsed - receivingForecast.at >= 0.1) {
+        receivingForecast = { receiver: passTarget, at: elapsed,
+          path: receivingPath({ x: ball.position.x, y: ball.position.y, z: ball.position.z },
+            { x: ballVelocity.x, y: ballVelocity.y, z: ballVelocity.z }, physics?.spin(), venue.surface) };
+      }
+      const pace = (touchSprint ? controlledSprint ? 6.8 : 8.1 : 5.8) * teamAbility * (1 - STAMINA.speedLoss * (1 - receiver.stamina));
+      let point = receivingPoint(receiver.motion, receivingForecast.path, pace, { length: LENGTH, width: WIDTH }, elapsed - receivingForecast.at);
+      // Let the recipient run into the general landing area, then give the
+      // user control before contact rather than changing control at the trap.
+      const gap = Math.hypot(ball.position.x - receiver.motion.x, ball.position.z - receiver.motion.z);
+      const approaching = (ball.position.x - receiver.motion.x) * ballVelocity.x + (ball.position.z - receiver.motion.z) * ballVelocity.z < 0;
+      const close = gap < 3.5 && ball.position.y < 1.5 && (approaching || gap < 0.9);
+      if (close) point = { x: ball.position.x + ballVelocity.x * 0.12, z: ball.position.z + ballVelocity.z * 0.12, t: 0.12 };
+      if (!point) return;
+      const correction = Math.hypot(point.x - receiver.motion.x, point.z - receiver.motion.z);
+      const ready = close || (point.t <= 1.1 && correction < pace * RECEIVING_ASSIST * point.t + 0.8);
+      if (controlled !== passTarget && !playerLock && !(controlled === 0 && manualKeeper)
+        && elapsed >= controlLockUntil - 0.12 && ready && gap < 9) {
+        controlled = passTarget; setSelectedPlayer(controlled + 1);
+      }
+      if (controlled === passTarget && !skill
+        && elapsed >= (receiver.stumbleUntil || 0)) receivingGuidance = { target: point, pace, amount: RECEIVING_ASSIST };
+    }
     function simulate(dt) {
       if (!pausedLocal) {
+        if (goalSequence) { updateGoalSequence(dt); return; }
         boundaryFrom.copy(ball.position);
         elapsed += dt; goalCooldown = Math.max(0, goalCooldown - dt);
         if (pendingRestart) {
@@ -1730,6 +1879,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           checkGoalContact(before);
         }
         if (!resetAt) {
+          updateReceivingGuidance();
           const active = people[controlled];
           const holding = keeperHolding === 0 && controlled === 0;
           const takingRestart = restart?.home && controlled === restart.taker;
@@ -1764,7 +1914,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             if (person.slideRecoveryUntil) { person.slideRecoveryUntil = 0; person.slideStandAt = elapsed; }
           }
           let activeSpeed = 0;
-          if (takingRestart && (restart.type === 'corner' || restart.type === 'freeKick' || restart.type === 'indirectFreeKick' || restart.type === 'penalty' || restart.type === 'goalKick')) {
+          if (takingRestart && (restart.type === 'corner' || restart.type === 'freeKick' || restart.type === 'indirectFreeKick' || restart.type === 'penalty' || restart.type === 'goalKick' || restart.type === 'throwIn')) {
             if (!setPiece) beginSetPiece();
             const r = setPiece.reticle, spot = restart.spot;
             const aimPoint = setPiece.button === 'j' ? setPiecePlan(setPiece.phase === 'runup' ? setPiece.power : power).target : r;
@@ -1778,12 +1928,16 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               } else {
                 r.x = clamp(r.x + (-ahead.z * sideways + ahead.x * upward) * 11 * dt, -LENGTH / 2 + 1, LENGTH / 2 - 0.5);
                 r.z = clamp(r.z + (ahead.x * sideways + ahead.z * upward) * 11 * dt, -WIDTH / 2 + 1, WIDTH / 2 - 1);
+                if (restart.type === 'throwIn') {
+                  const target = throwInPlan(spot, r, power, { length: LENGTH, width: WIDTH }).target;
+                  r.set(target.x, 0, target.z);
+                }
               }
               active.motion.vx = 0; active.motion.vz = 0;
             } else {
               // The run-up: from a few strides back onto the ball.
               const left = clamp((setPiece.strikeAt - elapsed) / 0.7, 0, 1);
-              const from = setPiece.runupFrom, end = { x: spot.x - ahead.x * 0.55, z: spot.z - ahead.z * 0.55 };
+              const from = setPiece.runupFrom, end = restart.type === 'throwIn' ? from : { x: spot.x - ahead.x * 0.55, z: spot.z - ahead.z * 0.55 };
               const detour = ((from.x - spot.x) * ahead.x + (from.z - spot.z) * ahead.z > 0) ? Math.sin((1 - left) * Math.PI) * 0.7 : 0;
               active.motion.x = THREE.MathUtils.lerp(from.x, end.x, 1 - left) - ahead.z * detour;
               active.motion.z = THREE.MathUtils.lerp(from.z, end.z, 1 - left) + ahead.x * detour;
@@ -1818,7 +1972,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             activeSpeed = Math.hypot(velocity.x, velocity.z);
             active.motion.x += active.motion.vx * dt; active.motion.z += active.motion.vz * dt;
           } else {
-            activeSpeed = run(active, { x: movement.x * (skill ? .35 : 1), z: movement.z * (skill ? .35 : 1) }, dt,
+            const manual = { x: movement.x * (skill ? .35 : 1), z: movement.z * (skill ? .35 : 1) };
+            const guided = receivingGuidance ? assistedReceivingInput(manual, active.motion, receivingGuidance.target, receivingGuidance.pace) : manual;
+            activeSpeed = run(active, guided, dt,
               { sprint: touchSprint && !strafing && !skill, keeper: controlled === 0 && manualKeeper, dribbling: possessor === controlled,
                 controlledSprint, ability: teamAbility });
             // Strafe dribble keeps facing the goal; jockeying keeps facing the carrier.
@@ -1864,7 +2020,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const next = passTarget >= 0 ? passTarget : nearestOf(true, ball.position.x, ball.position.z);
             if (next >= 0) { controlled = next; setSelectedPlayer(next + 1); }
           }
-          if (restart?.home && elapsed > restart.autoAt) { setPiece = null; show('QUICK RESTART', 0.8); kick(14, 'pass'); }
+          if (restart?.home && elapsed > restart.autoAt) {
+            if (setPiece?.restart.type === 'throwIn') { setPiece.power = 0.5; setPiece.button = 'j'; strikeSetPiece(); }
+            else { setPiece = null; show('QUICK RESTART', 0.8); kick(14, 'pass'); }
+          }
           if (setPiece && setPiece.restart !== restart) setPiece = null;
           if (restart && !restart.home && elapsed >= restart.readyAt) cpuTakeRestart();
 
@@ -1899,7 +2058,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             marking = markingAssignments(team(true).filter(p => p.index !== controlled && p.index !== helper),
               team(false).filter(p => p.index !== awayCarrier), ownGoalX(true));
           }
-          const shortReceiver = restart && restart.type !== 'penalty' ? nearestOf(restart.home, restart.spot.x, restart.spot.z, restart.taker) : -1;
+          const shortReceiver = restart && restart.type !== 'penalty'
+            && !(restart.type === 'corner' && restart.home && setPiece?.button !== 'j')
+            ? nearestOf(restart.home, restart.spot.x, restart.spot.z, restart.taker) : -1;
           const positioningPlayers = rulePlayers();
           const supportLines = [false, true].map(home => offsidePositions({ index: -1, home }, ball.position, positioningPlayers).line);
           for (const [index, person] of people.entries()) {
@@ -1937,12 +2098,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const receiving = (person.home ? passTarget === index : awayPassTarget === index) && destination;
             // Meet a slowing ground pass instead of waiting at an exact spot.
             // Stay in the receiving lane while a cross is still high overhead.
+            const intercept = receiving && person.home && receivingForecast?.receiver === index
+              ? receivingPoint(person.motion, receivingForecast.path, 8.1 * teamAbility, { length: LENGTH, width: WIDTH }, elapsed - receivingForecast.at) : null;
             const meetPass = receiving && ball.position.y < 0.85 && ball.position.distanceTo(destination) < 6;
             let targetX, targetZ;
             if (restart?.type === 'goalKick') {
               const shape = goalKickPosition(person.role, { length: LENGTH, width: WIDTH }, restart.home, person.home === restart.home);
               targetX = shape.x; targetZ = shape.z;
-            } else if (receiving) { targetX = meetPass ? ball.position.x + ballVelocity.x * 0.12 : destination.x; targetZ = meetPass ? ball.position.z + ballVelocity.z * 0.12 : destination.z; }
+            } else if (receiving) { targetX = intercept ? intercept.x : meetPass ? ball.position.x + ballVelocity.x * 0.12 : destination.x; targetZ = intercept ? intercept.z : meetPass ? ball.position.z + ballVelocity.z * 0.12 : destination.z; }
             else if (restart && index === shortReceiver) {
               const sign = restart.home ? 1 : -1;
               targetX = restart.spot.x + sign * (restart.type === 'corner' ? -5 : 7);
@@ -2144,7 +2307,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             if (best !== controlled) { controlled = best; setSelectedPlayer(best + 1); lastAutoSwitch = elapsed; }
           }
         }
-        if (elapsed - lastHUD >= 1) { lastHUD = elapsed; setSeconds(previous => Math.max(0, previous - 1)); }
+        if (!goalSequence && goalRecorder.wants(elapsed)) goalRecorder.push(elapsed, captureGoalFrame());
+        if (!goalSequence && elapsed - lastHUD >= 1) { lastHUD = elapsed; setSeconds(previous => Math.max(0, previous - 1)); }
       }
     }
     // A player standing still turns to watch the ball.
@@ -2195,8 +2359,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         },
         goalEffects: () => Object.values(goalsBySide).map(g => ({ side: g.side, rippling: Boolean(g.ripple), shaking: Boolean(g.shake), frameOffset: g.frame.position.toArray() })),
         snapshot: () => ({ elapsed, score: [...goals], paused: pausedLocal, periodEnded, sliding: Boolean(sliding),
+          goalSequence: goalSequence && { phase: goalSequence.phase, age: goalSequence.age, angle: goalSequence.angle, playTime: goalSequence.playTime,
+            scorer: goalSequence.scorer, teammates: goalSequence.teammates, frameCount: goalSequence.frames.length, firstBall: goalSequence.frames[0]?.ball },
           input: { passHold, touchSprint, shieldHold, shootHold, lobHold, jockeyHold, containHold, controlledSprint, strafeHold, sprintJockey, teammateContain, keeperRushHold, power },
-          possessor, awayCarrier, keeperHolding, passTarget, passDestination: passDestination?.toArray(), offside: offside.snapshot(), restartTouch: restartTouch && { ...restartTouch }, setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, pendingRestart: pendingRestart && { ...pendingRestart }, skill: skill && { ...skill }, started: ready.started,
+          possessor, awayCarrier, keeperHolding, passTarget, receivingGuidance, passDestination: passDestination?.toArray(), offside: offside.snapshot(), restartTouch: restartTouch && { ...restartTouch }, setPiece: setPiece && { phase: setPiece.phase, mode: setPiece.mode, reticle: setPiece.reticle.toArray(), button: setPiece.button, gesture: setPiece.gesture.join('') }, controlled, lastTouchHome, manualKeeper, playerLock, restart: restart && { ...restart }, pendingRestart: pendingRestart && { ...pendingRestart }, skill: skill && { ...skill }, started: ready.started,
           physicsReady: Boolean(physics), clipsLoaded: Object.keys(clips).length, events: { ...events },
           ball: ball.position.toArray(), velocity: ballVelocity.toArray(), spin: physics?.spin(),
           players: people.map(p => ({ x: p.motion.x, z: p.motion.z, heading: p.motion.heading, home: p.home,
@@ -2224,6 +2390,14 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             weight: person.currentAction?.getEffectiveWeight() };
         },
         distributionTarget: index => keeperThrowTarget(index),
+        setPiecePreview: () => {
+          if (!setPiece) return null;
+          const plan = setPiecePlan(previewStrength());
+          const origin = plan.origin || { x: ball.position.x, y: ball.position.y, z: ball.position.z };
+          const launch = plan.ground ? null : solveLaunch(plan.target, plan.height, plan.speed, plan.spin, plan.minLift, origin);
+          return { visible: aimDots.visible, target: plan.target, origin, launch,
+            points: launch ? flight(origin, launch.velocity, launch.spin, { distance: launch.distance, maxTime: 3.5 }).points : [] };
+        },
         press: key => { const wasPaused = pausedLocal; pausedLocal = false; pressAction(key); pausedLocal = wasPaused; },
         release: key => { const wasPaused = pausedLocal; pausedLocal = false; releaseAction(key); pausedLocal = wasPaused; },
         scenario: ({ ball: position, velocity = [0, 0, 0], spin = { x: 0, y: 0, z: 0 }, owner = -1, players = [], seed = 1, touch, controlLockFor = 0 }) => {
@@ -2237,7 +2411,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             p.mesh.position.set(x, 0, z); p.mesh.rotation.y = meshYawForHeading(p.motion.heading); p.actionUntil = 0; p.downUntil = elapsed + downFor;
             p.fixtureFreezeUntil = elapsed + freezeFor;
           }
-          controlLockUntil = elapsed + controlLockFor;
+          controlLockUntil = elapsed + controlLockFor; receivingForecast = receivingGuidance = null;
           ball.position.fromArray(position); ballVelocity.fromArray(velocity); physics?.reset(ball.position, ballVelocity, spin, people.map(person => person.mesh.position));
         },
       };
@@ -2308,8 +2482,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       adaptQuality(realFrameDt);
       updateRadar();
       updateSetPieceView();
-      marker.visible = !setPieceCam; // the over-the-head marker would fill a set-piece close-up
-      const phase = setPiece ? 'setPiece' : restart?.type === 'penalty' && !restart.home ? 'penaltyKeeper' : lastTouchHome ? 'attack' : 'defend';
+      marker.visible = !setPieceCam && !goalSequence; // keep close-ups clear
+      ring.visible = !goalSequence;
+      const phase = setPiece ? setPiece.restart.type === 'throwIn' ? 'throwIn' : 'setPiece' : restart?.type === 'penalty' && !restart.home ? 'penaltyKeeper' : lastTouchHome ? 'attack' : 'defend';
       if (phase !== shownPhase) { shownPhase = phase; setPadPhase(phase); }
       if (powerMeter.current) {
         const charging = passHold || shootHold || throwHold || lobHold || setPiece?.phase === 'charge';
@@ -2336,11 +2511,19 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (pieceInView && setPieceCam?.piece !== pieceInView) setPieceCam = { piece: pieceInView, until: Infinity };
       if (!pieceInView || resetAt) setPieceCam = null;
       host.parentElement?.classList.toggle('restart-camera', Boolean(setPieceCam));
-      const viewZoom = config.device === 'phone' && !setPieceCam ? 1.25 : 1;
+      const viewZoom = config.device === 'phone' && !setPieceCam && !goalSequence ? 1.25 : 1;
       if (Math.abs(cam.zoom - viewZoom) > 0.001) { cam.zoom = cutCamera ? viewZoom : THREE.MathUtils.lerp(cam.zoom, viewZoom, 1 - Math.exp(-6 * frameDt)); cam.updateProjectionMatrix(); } else if (cam.zoom !== viewZoom) { cam.zoom = viewZoom; cam.updateProjectionMatrix(); }
       const follow = cutCamera ? 1 : 1 - Math.exp(-5 * frameDt);
       cutCamera = false;
-      if (setPieceCam) {
+      if (goalSequence) {
+        const hero = people[goalSequence.scorer].mesh.position;
+        const frame = goalSequence.phase === 'replay' && replayPose
+          ? replayCamera(goalSequence.angle, replayPose.ball, (goalSequence.home ? 1 : -1) * LENGTH / 2, cam.aspect)
+          : { focus: { x: hero.x, y: 1, z: hero.z }, position: { x: hero.x - (goalSequence.home ? 5 : -5), y: 5.5, z: hero.z + 10 } };
+        cam.position.lerp(new THREE.Vector3(frame.position.x, frame.position.y, frame.position.z), goalSequence.phase === 'replay' ? 1 : follow);
+        cameraFocus.lerp(new THREE.Vector3(frame.focus.x, frame.focus.y, frame.focus.z), goalSequence.phase === 'replay' ? 1 : follow);
+        cam.lookAt(cameraFocus);
+      } else if (setPieceCam) {
         const { spot, home, type, taker } = setPieceCam.piece, goalX = -ownGoalX(home), sign = home ? 1 : -1;
         const aimAt = setPiece ? setPiece.reticle
           : type === 'corner' ? { x: goalX - sign * 6, z: 0 }
@@ -2494,7 +2677,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     : { cross: 'A', circle: 'B', square: 'X', triangle: 'Y', l1: 'LB', r1: 'RB', l2: 'LT', r2: 'RT' };
   const keeperHint = isTouch ? '' : `KEEPER'S BALL · AIM: ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} · THROW: ${keyLabel(preferences.keyboard.pass)} (HOLD = LONGER) · LONG KICK: ${keyLabel(preferences.keyboard.through)} · PUT DOWN: ${keyLabel(preferences.keyboard.lob)}`;
   const keyboardHint = `MOVE: ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} · PASS: ${keyLabel(preferences.keyboard.pass)} · SHOOT: ${keyLabel(preferences.keyboard.shoot)} · SWITCH: ${keyLabel(preferences.keyboard.switch)} · SPRINT: ${keyLabel(preferences.keyboard.sprint)} · PAUSE: ESC`;
-  return <div className={`game-shell ${isTouch ? 'touch-mode' : 'keyboard-mode'}`}>
+  return <div className={`game-shell ${isTouch ? 'touch-mode' : 'keyboard-mode'}${goalMoment ? ' goal-presentation' : ''}`}>
     <div className="game-view" ref={mount}/>
     <div className="game-hud">
       {preferences.hud.player && <div className="player-indicator">CONTROLLED PLAYER #{selectedPlayer}<small>{venue.shortName} · {isTouch ? 'Drag joystick · landscape' : gamepadStatus || `${preferences.keyboardPreset === 'classic' ? 'Arrows' : 'WASD'} · gamepad ready`}</small></div>}
@@ -2505,6 +2688,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       {preferences.hud.score && <div className="hud-bottom"><span>{homeName} <i/></span><span>{awayName} <i/></span></div>}
       {!isTouch && preferences.hud.hints && <div className="controls-hint">{keeperBall ? (gamepadStatus ? `KEEPER'S BALL · AIM: L · THROW: ${pad.cross} (HOLD = LONGER) · LONG KICK: ${pad.triangle} · PUT DOWN: ${pad.circle}` : keeperHint)
         : padPhase === 'penaltyKeeper' ? `PENALTY AGAINST YOU · HOLD ${gamepadStatus ? 'L' : preferences.keyboardPreset === 'classic' ? '← OR →' : 'A OR D'} LEFT OR RIGHT TO DIVE AT THE KICK · LET GO TO STAY CENTRAL`
+        : padPhase === 'throwIn' ? `THROW IN · ${gamepadStatus ? 'L' : preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} AIM · HOLD ${gamepadStatus ? pad.cross : keyLabel(preferences.keyboard.pass)} FOR POWER · RELEASE TO THROW`
         : padPhase === 'setPiece' ? (gamepadStatus
           ? `SET PIECE · L AIM · HOLD ${pad.square} SHOOT · ${pad.circle} CROSS · ${pad.cross} PASS · RUN-UP: R ↓↑ DIP · R HALF-CIRCLE CURL · R ↓↑↓ KNUCKLE · ${pad.square} AGAIN AT THE STRIKE = TIMED`
           : `SET PIECE · ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} AIM · HOLD ${keyLabel(preferences.keyboard.shoot)} SHOOT · ${keyLabel(preferences.keyboard.lob)} CROSS · ${keyLabel(preferences.keyboard.pass)} PASS · ${keyLabel(preferences.keyboard.shoot)} AGAIN AT THE STRIKE = TIMED`)
@@ -2513,11 +2697,17 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           : `${pad.square} TACKLE · ${pad.circle} SLIDE · ${pad.r1}+${pad.square} HARD TACKLE · ${pad.cross} CONTAIN · ${pad.l1} SWITCH · ${pad.l2} JOCKEY · ${pad.triangle} KEEPER RUSH`)
         : keyboardHint}</div>}
       {isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · SWITCH: PUT DOWN</div>}
+      {isTouch && padPhase === 'throwIn' && <div className="controls-hint keeper-touch">THROW IN · JOYSTICK: AIM · HOLD PASS FOR POWER · RELEASE TO THROW</div>}
       <div className="power-meter" ref={powerMeter}><i/><span>POWER</span></div>
       {caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}
       {preferences.hud.player && <div className="stamina-meter" ref={staminaMeter}><i/></div>}
     </div>
-    {isTouch && <TouchControls engine={engine} settings={preferences.touch} disabled={paused || !loading.done || orientationBlocked}/>}
+    {goalMoment && !paused && <div className="goal-sequence" role="region" aria-label={goalMoment.phase === 'replay' ? 'Goal replay' : 'Goal celebration'}>
+      <div className="goal-sequence-title" aria-live="polite"><small>{goalMoment.phase === 'replay' ? `GOAL REPLAY · ANGLE ${goalMoment.angle + 1} / ${GOAL_ANGLES}` : `${goalMoment.team} · GOAL!`}</small><strong>{goalMoment.scorer}</strong></div>
+      <button type="button" className="goal-pause" aria-label="Pause highlight" onClick={() => engine.current?.setPause(true)}>PAUSE</button>
+      <button type="button" className="btn primary goal-skip" onClick={() => engine.current?.skipGoal()}>{goalMoment.phase === 'replay' ? 'SKIP REPLAY' : 'SKIP CELEBRATION'} <span>▶</span><small>{gamepadStatus ? `${pad.cross} CONTINUE` : isTouch ? 'TAP TO CONTINUE' : 'ENTER TO CONTINUE'}</small></button>
+    </div>}
+    {isTouch && <TouchControls engine={engine} settings={preferences.touch} disabled={Boolean(goalMoment) || paused || !loading.done || orientationBlocked}/>}
     {!loading.done && <div className="match-loading" role="status" aria-live="polite"><div className="match-loading-card">
       <p className="eyebrow">{venue.name.toUpperCase()}</p>
       <h2>{homeName} <small>VS</small> {awayName}</h2>

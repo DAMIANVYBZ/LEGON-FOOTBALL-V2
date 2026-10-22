@@ -219,3 +219,12 @@ html,body,#root{width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
 .game-shell.restart-camera .radar { visibility: hidden; }
 
 .pause-card .btn:focus{outline:3px solid #ffc20e;outline-offset:4px;box-shadow:0 0 0 6px #1119}
+
+/* Live goal celebration and recorded match replay share independent skip controls. */
+.goal-sequence{position:absolute;inset:0;z-index:4;pointer-events:none;background:linear-gradient(0deg,#071411b3,transparent 26%,transparent 75%,#07141155);color:#fff}
+.goal-sequence-title{position:absolute;left:max(24px,env(safe-area-inset-left));bottom:max(26px,env(safe-area-inset-bottom));display:grid;gap:5px;text-shadow:0 2px 8px #000;font-family:'Barlow Condensed',Arial,sans-serif}
+.goal-sequence-title small{font-size:14px;font-weight:800;letter-spacing:.12em;color:#ffdb5c}.goal-sequence-title strong{font-size:clamp(24px,4vw,42px);line-height:1.1;text-transform:uppercase}
+.goal-skip{position:absolute;right:max(24px,env(safe-area-inset-right));bottom:max(28px,env(safe-area-inset-bottom));pointer-events:auto;min-height:54px;touch-action:manipulation}.goal-skip small{display:block;font-size:10px;letter-spacing:.08em;margin-top:3px}
+.goal-presentation .virtual-controls,.goal-presentation .radar,.goal-presentation .controls-hint,.goal-presentation .player-indicator,.goal-presentation .stamina-meter,.goal-presentation .hud-bottom{visibility:hidden}
+@media(max-width:600px){.goal-sequence-title{left:14px;bottom:100px}.goal-sequence-title small{font-size:11px}.goal-skip{right:14px;bottom:24px;font-size:16px!important}}
+.goal-pause{position:absolute;top:90px;right:max(24px,env(safe-area-inset-right));min-height:44px;padding:8px 12px;border:1px solid #ffffff9c;border-radius:6px;background:#142321cf;color:#fff;pointer-events:auto;font-weight:800;touch-action:manipulation}@media(max-height:500px){.goal-pause{top:62px;right:14px}}
