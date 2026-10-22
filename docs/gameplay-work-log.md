@@ -622,3 +622,36 @@ and commentary OFF, with no JS errors. Its speech service deliberately stubs
 mobile gesture restrictions; this is NOT an audible physical-iPhone/Android
 check. Results: /workspace/playtest-artifacts/mobile-commentary/results.json .
 Production build and Cloudflare static asset dry run also pass.
+
+## 2026-10-22 — clear-glass, context-sensitive four-button phone controls
+
+User explicitly wants clear glass rather than faded controls, and four action
+buttons rather than extra tackle/jockey buttons. Use possession to map ○ from
+Shoot to Slide, × from Pass to Standing Tackle, and the context button from
+Jockey (the requested attacking shield/protect action) to Switch Player. Sprint
+remains the fourth button. Preserve the keeper's Put Down action on the same
+context button while holding the ball in hands.
+
+Added shared touchActions mapping and live engine-side resolution at press.
+Labels follow team possession/restarts/keeper control. Stable button identities
+and captured press actions prevent a held shot/pass changing into another
+release action after possession changes. Cancel invalid holds while retaining
+joystick/sprint pointer ownership. Standing tackle and player switch call their
+explicit mechanics; off-ball attack taps cannot fall through to keyboard tackle
+fallbacks. Keyboard and physical gamepad mappings remain unchanged.
+
+Remove the opacity preference/slider and legacy saved fade; foreground opacity
+stays 1. Glass uses nearly clear fills, a light reflective edge and only 1 px
+backdrop blur. Remove coloured tints, heavy frost and native blue rectangular
+tap highlight. Keep four buttons in the same compact positions with size and
+left/right placement preferences retained.
+
+Verification: all 140 unit tests pass, production build passes, Wrangler dry
+run packages 51 static assets. tools/audit_touch_controls.py replays actual
+mobile touch input for shield hold/release, mode changes, standing ball win,
+slide, player switch, held multi-finger movement/sprint through possession
+changes, charged pass/shot and off-ball attack guards. Four-button count and
+full opacity are checked even with a saved .08 legacy opacity. No JS errors.
+Layout screenshots and results: /workspace/playtest-artifacts/touch-controls/ .
+Fixtures use the current ten-a-side Sarbah roster, not hardcoded seven-a-side
+player indices.

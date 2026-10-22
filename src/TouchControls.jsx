@@ -1,25 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const BUTTONS = [
-  { key: 'q', label: 'SWITCH', className: 'switch' },
-  { key: 'k', label: 'SHOOT', symbol: '○', className: 'circle' },
-  { key: 'j', label: 'PASS', symbol: '×', className: 'cross' },
-  { key: 'shift', label: 'SPRINT', className: 'sprint' },
-];
+import { touchActions } from './touchActions.js';
 
 function ActionButton({ input, engine, disabled }) {
   const [held, setHeld] = useState(false);
   const pointer = useRef(null);
   const release = (event, cancelled = false) => {
-    if (pointer.current === null || event.pointerId !== pointer.current) return;
+    if (pointer.current === null || event.pointerId !== pointer.current.id) return;
+    const action = pointer.current.action;
     pointer.current = null;
     setHeld(false);
-    if (cancelled) engine.current?.cancel(input.key);
-    else engine.current?.release(input.key);
+    if (cancelled) engine.current?.cancel(action);
+    else engine.current?.release(action);
   };
   useEffect(() => {
     const cancel = () => {
-      pointer.current = null; setHeld(false); engine.current?.cancel(input.key);
+      const active = pointer.current;
+      pointer.current = null; setHeld(false);
+      if (active) engine.current?.cancel(active.action);
     };
     if (disabled) cancel();
     window.addEventListener('blur', cancel);
@@ -33,23 +31,25 @@ function ActionButton({ input, engine, disabled }) {
     onPointerDown={event => {
       event.preventDefault();
       if (disabled || pointer.current !== null) return;
-      pointer.current = event.pointerId;
+      const action = engine.current?.touchAction(input.id) || input.key;
+      pointer.current = { id: event.pointerId, action };
       event.currentTarget.setPointerCapture(event.pointerId);
       setHeld(true);
-      engine.current?.press(input.key);
+      engine.current?.press(action);
     }}
     onPointerUp={event => release(event)}
     onPointerCancel={event => release(event, true)}
     onLostPointerCapture={event => release(event, true)}
     onClick={event => {
       if (disabled || event.detail !== 0) return;
-      engine.current?.press(input.key);
-      engine.current?.release(input.key);
+      const action = engine.current?.touchAction(input.id) || input.key;
+      engine.current?.press(action);
+      engine.current?.release(action);
     }}
   >{input.symbol ? <><span className="action-symbol">{input.symbol}</span><small>{input.label}</small></> : input.label}</button>;
 }
 
-export default function TouchControls({ engine, settings, disabled = false }) {
+export default function TouchControls({ engine, settings, attacking = true, keeperHolding = false, disabled = false }) {
   const stickPointer = useRef(null);
   const [stick, setStick] = useState({ x: 0, y: 0 });
   useEffect(() => {
@@ -74,7 +74,7 @@ export default function TouchControls({ engine, settings, disabled = false }) {
     setStick({ x: 0, y: 0 });
     engine.current?.setAxis(0, 0);
   };
-  return <div className={`virtual-controls touch-stick-${settings.joystick} touch-actions-${settings.actions}`} style={{ '--touch-size': settings.size, '--touch-opacity': settings.opacity }} aria-label="On-screen player controls">
+  return <div className={`virtual-controls touch-stick-${settings.joystick} touch-actions-${settings.actions}`} style={{ '--touch-size': settings.size }} aria-label="On-screen player controls">
     <button type="button" className="touch-pause" disabled={disabled} onClick={() => engine.current?.togglePause()}>Ⅱ PAUSE</button>
     <div className="joystick-wrap">
       <div
@@ -100,7 +100,7 @@ export default function TouchControls({ engine, settings, disabled = false }) {
       <span>MOVE</span>
     </div>
     <div className="action-pad" aria-label="Player actions">
-      {BUTTONS.map(input => <ActionButton key={input.key} input={input} engine={engine} disabled={disabled}/>)}
+      {touchActions(attacking, keeperHolding).map(input => <ActionButton key={input.id} input={input} engine={engine} disabled={disabled}/>)}
     </div>
   </div>;
 }

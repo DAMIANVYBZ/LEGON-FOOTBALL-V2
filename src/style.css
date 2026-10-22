@@ -184,10 +184,12 @@ html,body,#root{width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
 .touch-mode .action-button.cross{left:78%;top:77%}
 .touch-mode .joystick{width:calc(clamp(90px,26vh,132px) * var(--touch-size,1));height:calc(clamp(90px,26vh,132px) * var(--touch-size,1))}
 /* Keep the controls 97% visible while the frosted fill reveals the pitch beneath. */
-.touch-mode .action-button,.touch-mode .joystick,.touch-mode .touch-pause{opacity:var(--touch-opacity,.97);background:linear-gradient(145deg,rgba(255,255,255,.26),rgba(255,255,255,.09) 48%,rgba(13,45,52,.2));border-color:rgba(255,255,255,.78);box-shadow:inset 0 1px 2px rgba(255,255,255,.7),inset 0 -1px 1px rgba(255,255,255,.18),0 4px 14px rgba(0,0,0,.24);-webkit-backdrop-filter:blur(9px) saturate(1.35);backdrop-filter:blur(9px) saturate(1.35)}
-.touch-mode .joystick-knob{background:linear-gradient(145deg,rgba(255,255,255,.35),rgba(255,255,255,.12) 60%,rgba(15,54,59,.22));border-color:rgba(255,255,255,.85)}
-.touch-mode .action-button.circle{background:linear-gradient(145deg,rgba(255,233,165,.32),rgba(255,255,255,.08) 55%,rgba(129,81,8,.2))}
-.touch-mode .action-button.sprint{background:linear-gradient(145deg,rgba(145,255,230,.28),rgba(255,255,255,.08) 55%,rgba(12,91,81,.2))}
+/* Clear glass: crisp lettering and a light reflective rim, with the field
+   visible through the surface. Never fade the control or its descendants. */
+.touch-mode .action-button,.touch-mode .joystick,.touch-mode .touch-pause{-webkit-tap-highlight-color:transparent;opacity:1;background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.015) 48%,rgba(255,255,255,.035));border-color:rgba(255,255,255,.68);box-shadow:inset 0 1px 1px rgba(255,255,255,.7),inset 0 -1px 1px rgba(255,255,255,.16),0 2px 6px rgba(0,0,0,.12);-webkit-backdrop-filter:blur(1px) saturate(1.04);backdrop-filter:blur(1px) saturate(1.04)}
+.touch-mode .joystick-knob{opacity:1;background:linear-gradient(145deg,rgba(255,255,255,.14),rgba(255,255,255,.025));border-color:rgba(255,255,255,.78);-webkit-backdrop-filter:blur(1px);backdrop-filter:blur(1px)}
+.touch-mode .action-button.held{background:linear-gradient(145deg,rgba(255,255,255,.18),rgba(255,255,255,.035));box-shadow:inset 0 1px 2px #fffd,0 0 0 1px #fffa}
+
 .settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.settings-head h3{margin:5px 0}.settings-head .segmented{margin:2px 0}.settings-head .btn{padding:6px 10px}
 .settings-explainer{font-size:13px;line-height:1.25;margin:3px 0 10px;color:#5d594f}
 .settings-remap div{min-height:34px;gap:12px}.settings-remap button,.settings-remap select{min-width:82px;max-width:150px;padding:4px 7px;border:1px solid #d4cbb9;border-radius:3px;background:#fff4ca;font:800 12px 'Barlow Condensed';text-align:center}.settings-remap button.capturing{background:#ffc20e}

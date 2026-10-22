@@ -21,7 +21,7 @@ test('saved touch and HUD choices are retained while invalid values are bounded'
   assert.equal(prefs.touch.joystick, 'right');
   assert.equal(prefs.touch.actions, 'left');
   assert.equal(prefs.touch.size, 1.25);
-  assert.equal(prefs.touch.opacity, 0.08);
+  assert.equal('opacity' in prefs.touch, false, 'legacy opacity must not fade glass controls');
   assert.equal(prefs.hud.player, false);
   assert.equal(prefs.hud.score, true);
 });

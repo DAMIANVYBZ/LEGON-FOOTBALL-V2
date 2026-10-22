@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import TouchControls from './TouchControls.jsx';
+import { touchActions } from './touchActions.js';
 import { getVenue } from './venues.js';
 import { teamSizeForVenue, fieldPositions, kickoffRoles } from './roster.js';
 import { buildVenueScene } from './VenueScene.js';
@@ -116,6 +117,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const staminaMeter = useRef(null);
   const [loading, setLoading] = useState({ done: false, progress: 0, step: 'Preparing the pitch' });
   const [keeperBall, setKeeperBall] = useState(false);
+  const [touchAttacking, setTouchAttacking] = useState(true);
   const [caption, setCaption] = useState('');
   const [padPhase, setPadPhase] = useState('attack');
 
@@ -408,7 +410,18 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const keys = new Set(), heldKeys = new Map(), mixers = [], clips = {};
     let diveLocalSign = 1;
     const keyboard = preferences.keyboard;
+    let shownTouchAttack = null;
+    const isTouchAttack = () => restart ? restart.home : keeperHolding >= 0 ? people[keeperHolding].home
+      : awayCarrier >= 0 ? false : possessor >= 0 ? people[possessor].home : lastTouchHome;
     const state = {
+      touchAction(id) {
+        const attacking = isTouchAttack();
+        // Off-ball attack taps must not fall through to the keyboard's dual-use
+        // tackle action. Only the defensive labels initiate tackles on touch.
+        if (attacking && (id === 'circle' || id === 'cross') && !restart && keeperHolding !== 0
+          && Math.hypot(people[controlled].motion.x - ball.position.x, people[controlled].motion.z - ball.position.z) >= 1.8) return 'touchIgnore';
+        return touchActions(attacking, keeperHolding === 0).find(input => input.id === id)?.key;
+      },
       setPeriodEnded(value) { periodEnded = value; },
       setPause(value) { if (periodEnded && !value) return; clearInput(); renderPending = true; pausedLocal = value; setPaused(value); },
       togglePause() { state.setPause(!pausedLocal); },
@@ -1217,6 +1230,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         else if (setPiece.phase === 'runup' && key === 'k' && setPiece.button === 'k' && setPiece.timing === null) setPiece.timing = elapsed - setPiece.strikeAt;
         return;
       }
+      if (key === 'touchTackle') { tackle('tackle', 'standing'); return; }
+      if (key === 'touchSwitch') { switchPlayer(); return; }
       if (key === 'h') { shieldHold = true; if (!lastTouchHome) tackle(); return; }
       if (key === 'f') { finesseHold = true; return; }
       if (key === 't') { teammateContain = true; return; }
@@ -2474,6 +2489,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const realFrameDt = clock.getDelta();
       const frameDt = Math.min(realFrameDt, 0.25);
       pollGamepad();
+      if (isTouch && isTouchAttack() !== shownTouchAttack) {
+        shownTouchAttack = isTouchAttack(); setTouchAttacking(shownTouchAttack);
+      }
       // The pause menu can reuse the last picture. Keep polling inputs and
       // redraw after a resize or a debug replay, without shading the pitch
       // continuously behind an unchanged overlay.
@@ -2706,7 +2724,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           ? `${pad.cross} PASS · ${pad.triangle} THROUGH · ${pad.square} SHOOT · ${pad.circle} LOB · ${pad.r1} SPRINT · ${pad.l2} SHIELD · ${pad.r2}+${pad.square} FINESSE · ${pad.l1}+${pad.square} CHIP`
           : `${pad.square} TACKLE · ${pad.circle} SLIDE · ${pad.r1}+${pad.square} HARD TACKLE · ${pad.cross} CONTAIN · ${pad.l1} SWITCH · ${pad.l2} JOCKEY · ${pad.triangle} KEEPER RUSH`)
         : keyboardHint}</div>}
-      {isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · SWITCH: PUT DOWN</div>}
+      {isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · PUT DOWN: RELEASE TO FEET</div>}
       {isTouch && padPhase === 'throwIn' && <div className="controls-hint keeper-touch">THROW IN · JOYSTICK: AIM · HOLD PASS FOR POWER · RELEASE TO THROW</div>}
       <div className="power-meter" ref={powerMeter}><i/><span>POWER</span></div>
       {caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}
@@ -2717,7 +2735,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       <button type="button" className="goal-pause" aria-label="Pause highlight" onClick={() => engine.current?.setPause(true)}>PAUSE</button>
       <button type="button" className="btn primary goal-skip" onClick={() => engine.current?.skipGoal()}>{goalMoment.phase === 'replay' ? 'SKIP REPLAY' : 'SKIP CELEBRATION'} <span>▶</span><small>{gamepadStatus ? `${pad.cross} CONTINUE` : isTouch ? 'TAP TO CONTINUE' : 'ENTER TO CONTINUE'}</small></button>
     </div>}
-    {isTouch && <TouchControls engine={engine} settings={preferences.touch} disabled={Boolean(goalMoment) || paused || !loading.done || orientationBlocked}/>}
+    {isTouch && <TouchControls engine={engine} settings={preferences.touch} attacking={touchAttacking} keeperHolding={keeperBall} disabled={Boolean(goalMoment) || paused || !loading.done || orientationBlocked}/>}
     {!loading.done && <div className="match-loading" role="status" aria-live="polite"><div className="match-loading-card">
       <p className="eyebrow">{venue.name.toUpperCase()}</p>
       <h2>{homeName} <small>VS</small> {awayName}</h2>

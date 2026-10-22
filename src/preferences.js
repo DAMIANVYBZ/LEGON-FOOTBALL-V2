@@ -11,7 +11,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   keyboardPreset: 'classic',
   keyboard: KEYBOARD_PRESETS.classic,
   gamepad: GAMEPAD_BUTTONS,
-  touch: { joystick: 'left', actions: 'right', size: 1, opacity: 0.97 },
+  touch: { joystick: 'left', actions: 'right', size: 1 },
   hud: { player: true, radar: true, hints: true, score: true, messages: true, sound: true, music: true, commentary: true, vibration: true },
   musicTrack: 'amapiano',
 });
@@ -29,7 +29,7 @@ export function normalizePreferences(value = {}) {
     keyboardPreset,
     keyboard: Object.fromEntries(Object.keys(preset).map(action => [action, typeof value.keyboard?.[action] === 'string' ? value.keyboard[action].toLowerCase() : preset[action]])),
     gamepad: Object.fromEntries(Object.entries(GAMEPAD_BUTTONS).map(([action, index]) => [action, Number.isInteger(value.gamepad?.[action]) && value.gamepad[action] >= 0 && value.gamepad[action] <= 16 ? value.gamepad[action] : index])),
-    touch: { joystick: allowedPosition(value.touch?.joystick), actions: allowedPosition(value.touch?.actions || 'right'), size: clamp(value.touch?.size, 0.75, 1.25, 1), opacity: clamp(value.touch?.opacity, 0.08, 1, 0.97) },
+    touch: { joystick: allowedPosition(value.touch?.joystick), actions: allowedPosition(value.touch?.actions || 'right'), size: clamp(value.touch?.size, 0.75, 1.25, 1) },
     hud: Object.fromEntries(Object.keys(DEFAULT_PREFERENCES.hud).map(key => [key, value.hud?.[key] !== false])),
     musicTrack: ['amapiano', 'anthem'].includes(value.musicTrack) ? value.musicTrack : 'amapiano',
   };
@@ -40,7 +40,7 @@ export function readPreferences() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return normalizePreferences(JSON.parse(saved));
     const previous = JSON.parse(localStorage.getItem(PREVIOUS_STORAGE_KEY) || '{}');
-    return normalizePreferences({ ...previous, touch: { ...previous.touch, opacity: 0.97 } });
+    return normalizePreferences(previous);
   }
   catch { return normalizePreferences(); }
 }
