@@ -571,3 +571,28 @@ sprint/slide/spin/halftime and moving-pass checks; 51 event groups and first-hal
 completion on Sarbah/Astro/Oval; production desktop and phone smoke checks.
 Build and Cloudflare packaging of 51 assets pass. Detailed reports and Settings
 screenshots are in `/workspace/passing-modes-audit/`.
+
+## 2026-10-22 — Natural UG Stadium grass and shorter slide recovery
+
+Replace the University of Ghana Stadium model’s flat green infield material
+with deterministic grass colour texture: small clumps, olive/dry blade flecks,
+soft mowing bands and a repeating fibre bump map. Extract only horizontal green
+infield triangles, retaining the curved edge beside the blue track, stands,
+pitch markings, shadows and the existing ground height. Use the same material
+for the procedural stadium fallback. Leave the other venues’ surfaces alone;
+release the generated textures/material and extracted geometry on match exit.
+
+Set slide/follow-through to 1.1 seconds and get-up to 0.6 seconds: a full clean
+or missed sliding tackle returns control after 1.7 seconds, without the former
+2.6-second prone wait after a miss. Preserve boot contact, sliding momentum and
+foul/card decisions. Update the browser recovery checks to verify immobility
+before the deadline and resumed movement immediately afterwards.
+
+Verified: all 127 automated tests; 81 slide scenarios across UG Stadium, Astro
+and Sarbah; upright bot tackling/foul rules and 12 rendered skeleton samples
+through slide/get-up/resumed movement. Desktop and emulated landscape-phone
+checks cover Co-op, Wide and Behind player views, ordinary running/passing and
+grounded ball height. The procedural stadium fallback also renders correctly
+when its imported model is unavailable. No browser/shader errors were observed.
+Production build and Cloudflare dry-run packaging of 51 assets pass. Reports,
+rendered views and logs are in `/workspace/stadium-grass-audit/`.

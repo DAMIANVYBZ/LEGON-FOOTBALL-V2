@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Object3D, AnimationMixer, AnimationClip, NumberKeyframeTrack } from 'three';
+import { SLIDE_TIMING } from '../src/challenges.js';
 import { groundedSlideClip, transitionPlayerAction } from '../src/playerAnimation.js';
 
 test('replaying an action does not flash back to the unanimated bind pose', () => {
@@ -25,15 +26,15 @@ test('the slide holds its low pose through follow-through without changing the c
  mixer.setTime(1); assert.ok(Math.abs(joint.position.y - .2) < 1e-6);
  assert.deepEqual(Array.from(source.tracks[0].values), before);
 });
-test('different moves blend continuously and slower recovery keeps its full duration', () => {
+test('different moves blend continuously and get-up fits its recovery window', () => {
  const root=new Object3D(),joint=new Object3D();joint.name='joint';root.add(joint);
  const clip=(name,y)=>new AnimationClip(name,1,[new NumberKeyframeTrack('joint.position[y]',[0,1],[y,y])]);
  const person={mixer:new AnimationMixer(root)};
  transitionPlayerAction(person,clip('ground',.2));person.mixer.update(.2);
- transitionPlayerAction(person,clip('stand',1),{once:true,duration:2.2});person.mixer.update(.085);
+ transitionPlayerAction(person,clip('stand',1),{once:true,duration:SLIDE_TIMING.getUp});person.mixer.update(.085);
  assert.ok(joint.position.y>.2&&joint.position.y<1);
- person.mixer.update(1.1);assert.equal(person.currentAction.isRunning(),true);
- assert.ok(person.currentAction.time<1);person.mixer.update(1.1);
+ person.mixer.update(.4);assert.equal(person.currentAction.isRunning(),true);
+ assert.ok(person.currentAction.time<1);person.mixer.update(.12);
  assert.equal(person.currentAction.paused,true);assert.equal(joint.position.y,1);
 });
 

@@ -37,8 +37,10 @@ included in this change.
 - Exclude the sliding player's upright physics capsule while animated boots
   resolve the tackle. Restore normal collision when the slide ends. Briefly
   allow the struck ball to leave the former carrier's capsule.
-- Preserve the slower 2.2-second get-up and the extra 2.6-second grounded hold
-  after a miss. Reject tackles during restarts, pending exits and goal resets;
+- Use a 1.1-second slide/follow-through and 0.6-second get-up, returning
+  control after 1.7 seconds for both clean tackles and misses, with no extra
+  prone hold (updated at the user’s request on 2026-10-22). Reject tackles during
+  restarts, pending exits and goal resets;
   clear pending kicks and skills when a slide begins.
 - Fix the bot's approach around a close shield: its destination now clears the
   carrier and opens a route to the ball, instead of leaving it stuck beside the
@@ -70,7 +72,9 @@ Results: 114 unit tests and 81 slide scenarios pass. In the 48 clean directional
 fixtures, first boot contact occurs 0.20–0.383 seconds after input, within the
 0.23-metre contact radius; the player continues another 0.765–1.325 metres.
 Both wide misses, crossing balls, high-ball rejection, loose balls, a moving
-carrier, running entry, body-first yellow/red cards and slowed recovery pass.
+carrier, running entry, body-first yellow/red cards and recovery pass. The
+current audit also checks that clean tackles and misses restore control at
+1.7 seconds.
 
 First halves complete on Sarbah, Astro and Oval, with 51 event groups passing;
 Sarbah also passes after the bot approach correction. Controller charging,

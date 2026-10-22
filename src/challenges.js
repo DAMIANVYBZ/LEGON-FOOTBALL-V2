@@ -33,6 +33,7 @@ export function defensiveApproach(defender, carrier, ball, { goalX, primary = tr
     z: carrier.z + dz / size * .95 + dx / size * side * 1.25 };
 }
 
-// Retain the requested slower get-up and the extra grounded hold after a miss.
+// Slide and follow-through for 1.1 s, then rise for .6 s: back in play after
+// 1.7 s whether the boot finds the ball or misses. No extra prone hold.
 export const SLIDE_TIMING = Object.freeze({ animation: 1.1,
-  missedRecovery: 4.8, groundHold: 2.6, getUp: 2.2 });
+  missedRecovery: .6, groundHold: 0, getUp: .6 });

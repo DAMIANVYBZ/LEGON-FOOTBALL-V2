@@ -49,10 +49,10 @@ async def main():
    await page.evaluate("window.__footballDebug.scenario({ball:[.68,.11,0],owner:5,players:[{index:5,x:0,z:0}]});window.__footballDebug.setCameraMode('Behind player');window.__footballDebug.step(.02);window.__footballDebug.animate(.2)")
    await page.evaluate('async()=>{for(let i=0;i<3;i++)await new Promise(requestAnimationFrame)}')
    await page.screenshot(path=str(out/'textured-player-in-match.png'))
-   # Empty-pitch miss: real slide -> grounded hold -> slowed stand -> play.
+   # Empty-pitch miss: slide -> get-up -> control restored at 1.7 seconds.
    await page.evaluate('''()=>{const d=window.__footballDebug;d.scenario({ball:[15,.11,0],players:Array.from({length:14},(_,index)=>({index,x:index===5?0:5000,z:0,downFor:index===5?0:30}))});d.tackle('slide');d.setCameraMode('Co-op');}''')
    samples=[];last=0
-   for t in [.1,.3,.6,.9,1.12,2,3.65,3.85,4.4,5,5.95,6.3]:
+   for t in [.1,.3,.6,.9,1.12,1.3,1.5,1.65,1.75,1.9,2,2.2]:
     await page.evaluate('''dt=>{const d=window.__footballDebug;d.step(dt)}''',t-last);last=t
     visual=await page.evaluate('window.__footballDebug.playerVisual(5)');state=await page.evaluate('window.__footballDebug.snapshot()')
     assert visual['visible']
@@ -62,14 +62,14 @@ async def main():
     samples.append({'time':t,'visual':visual,'state':state,'size':size})
     if t==1.12:
      await page.evaluate('window.__footballDebug.move(1,0)')
-    if t in [.6,2,4.4]:
+    if t in [.6,1.3,1.9]:
      await page.evaluate('window.__footballDebug.setCameraMode("Behind player")')
      await page.evaluate('async()=>{for(let i=0;i<3;i++)await new Promise(requestAnimationFrame)}')
      await page.screenshot(path=str(out/f'slide-{t}.png'))
-   assert samples[4]['visual']['action']=='fallen',samples[4]
+   assert samples[4]['visual']['action']=='stand',samples[4]
    assert samples[7]['visual']['action']=='stand',samples[7]
-   assert samples[9]['visual']['downUntil']>samples[9]['state']['elapsed'],'recovery ended too early'
-   assert all(abs(s['state']['players'][5]['x']-samples[4]['state']['players'][5]['x'])<.01 for s in samples[5:10]),'player moved during recovery'
+   assert samples[7]['visual']['downUntil']>samples[7]['state']['elapsed'],'recovery ended too early'
+   assert all(abs(s['state']['players'][5]['x']-samples[4]['state']['players'][5]['x'])<.01 for s in samples[5:8]),'player moved during recovery'
    assert samples[-1]['visual']['downUntil']<samples[-1]['state']['elapsed']
    report['slide']=samples
    report['successfulSlide']=await page.evaluate('''()=>{
@@ -81,7 +81,7 @@ async def main():
     d.step(.35);const before=d.snapshot().events.tackles;
     d.tackle('slide');d.step(1.12);const s=d.snapshot(),v=d.playerVisual(5);
     if(s.events.tackles!==before+1||s.sliding||v.action!=='stand')throw Error('clean slide did not win and enter get-up '+JSON.stringify({state:s,visual:v,before}));
-    if(v.downUntil-s.elapsed<2.1)throw Error('successful slide skips slow get-up');
+    if(Math.abs(v.downUntil-s.elapsed-.58)>.025)throw Error('successful slide does not finish at 1.7 seconds');
     return {state:s,visual:v};
    }''')
    report['groundedHeader']=await page.evaluate('''()=>{

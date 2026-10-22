@@ -2,7 +2,7 @@ import { AnimationClip, LoopOnce, LoopRepeat } from 'three';
 
 // The source tackle contains a running entry, a scissoring fall and a get-up.
 // Retain its torso descent, then hold the grounded pose. Feet are placed by
-// the two-joint slide reach; recovery uses the separate slowed stand clip.
+// the two-joint slide reach; recovery uses the separate stand clip.
 export function groundedSlideClip(source) {
   const times = [0, .12, .28, .42, 1.1], poses = [.3, .6, 1, 1.2, 1.2];
   return new AnimationClip('grounded-slide', 1.1, source.tracks.map(track => {

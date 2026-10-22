@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { stadiumGrassUV } from './stadiumGrass.js';
 
 function seeded(seed) {
   let value = seed;
@@ -40,12 +41,17 @@ function surfaceTexture(venue) {
   return texture;
 }
 
-export function buildVenueScene({ scene, venue, box, material }) {
+export function buildVenueScene({ scene, venue, box, material, stadiumGrass }) {
   const { length, width } = venue;
   const soil = venue.surface === 'soil' || venue.surface === 'worn';
   const ground = soil ? '#956b4d' : venue.kind === 'stadium' ? '#546d57' : '#677c55';
   box(length + 160, 0.24, width + 150, ground, 0, -0.22, 0);
-  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(length, width), new THREE.MeshStandardMaterial({ map: surfaceTexture(venue), roughness: 1 }));
+  const geometry = new THREE.PlaneGeometry(length, width);
+  if (stadiumGrass) {
+    const uv = geometry.attributes.uv, position = geometry.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, ...stadiumGrassUV(position.getX(i), -position.getY(i)));
+  }
+  const pitch = new THREE.Mesh(geometry, stadiumGrass || new THREE.MeshStandardMaterial({ map: surfaceTexture(venue), roughness: 1 }));
   pitch.rotation.x = -Math.PI / 2; pitch.position.y = 0; pitch.receiveShadow = true; scene.add(pitch);
 
   function tree(x, z, scale = 1) {

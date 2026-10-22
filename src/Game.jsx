@@ -4,6 +4,7 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import TouchControls from './TouchControls.jsx';
 import { getVenue } from './venues.js';
 import { buildVenueScene } from './VenueScene.js';
+import { createStadiumGrassMaterial, textureStadiumGrass } from './stadiumGrass.js';
 import { activeGamepad, readGamepad } from './gamepad.js';
 import { keyLabel } from './preferences.js';
 import { abilityForWins, readTeamProgress, recordTeamWin } from './progression.js';
@@ -166,7 +167,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const fieldGroup = new THREE.Group();
     scene.add(fieldGroup);
     const venueBox = (w, h, d, color, x, y, z, parent = fallbackEnvironment) => box(w, h, d, color, x, y, z, parent);
-    buildVenueScene({ scene: fallbackEnvironment, venue, box: venueBox, material });
+    const stadiumGrass = venue.id === 'ug-stadium' ? createStadiumGrassMaterial(Math.min(8, renderer.capabilities.getMaxAnisotropy())) : null;
+    let disposeStadiumGrass = () => {};
+    buildVenueScene({ scene: fallbackEnvironment, venue, box: venueBox, material, stadiumGrass });
     // Scenery receives shadows but does not cast them: players, ball and goals
     // are what the eye follows, and stadium shadows cost the most to draw.
     fallbackEnvironment.traverse(node => { node.castShadow = false; });
@@ -198,6 +201,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const turf = ray.intersectObject(surroundings, true).find(hit => Math.abs(hit.point.y) < 0.2);
           if (turf) surroundings.position.y -= turf.point.y;
         }
+        if (stadiumGrass) disposeStadiumGrass = textureStadiumGrass(surroundings, stadiumGrass);
         box(420, 0.16, 420, venue.kind === 'stadium' ? '#526c50' : '#78865a', 0, -0.3, 0);
         scene.add(surroundings);
         fallbackEnvironment.visible = false;
@@ -2654,6 +2658,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       if (import.meta.env.DEV) delete window.__footballDebug;
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur);
       physics?.free(); sound.dispose(); commentary.dispose(); clearTimeout(captionTimer);
+      disposeStadiumGrass();
+      if (stadiumGrass) { stadiumGrass.map.dispose(); stadiumGrass.bumpMap.dispose(); stadiumGrass.dispose(); }
       window.removeEventListener('pointerdown', unlockSpeech); window.removeEventListener('keydown', unlockSpeech);
       host.removeChild(renderer.domElement); renderer.dispose(); engine.current = null;
     };
