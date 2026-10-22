@@ -15,6 +15,7 @@ import { loadAnimation, loadGLTF, loadPlayerModel, loadVenueManifest } from './a
 import { GOAL, KICK_SPIN, MAX_SIM_STEPS, SIM_DT, STAMINA, difficultyFor } from './physicsConfig.js';
 import { createRandom, keeperPosition, saveOutcome, shotOnGoal } from './keeper.js';
 import { bestPassOption, decideCarrier, markingAssignments } from './cpuBrain.js';
+import { createTeamAttributes, hashSeed, paceFactor, accelerationFactor, agilityFactor, finishingAccuracy, staminaFactor, handlingFactor, looseTouchChance, passError, tackleChance } from './attributes.js';
 import { createMatchAudio } from './audio.js';
 import { matchKits, teamShort } from './teams.js';
 import { createCommentary, resultLine, scoreLine, goalContext } from './commentary.js';
@@ -275,12 +276,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       return group;
     }
     for (const [home, side] of [[true, 1], [false, -1]]) {
+      // Every footballer has their own attributes (src/attributes.js): the same hall
+      // always fields the same players. The CPU side's quality follows the difficulty.
+      const teamAttributes = createTeamAttributes(TEAM_SIZE, { seed: hashSeed(home ? config.home : config.away), quality: home ? (teamAbility - 1) * 0.5 : difficulty.quality });
       fieldPositions(config.formation, side, LENGTH, WIDTH, TEAM_SIZE).forEach((spawn, index) => {
         const mesh = placeholder(home ? kits.home : kits.away);
         mesh.position.set(spawn[0], 0, spawn[1]); playerRoot.add(mesh);
         const heading = home ? 0 : Math.PI;
         mesh.rotation.y = meshYawForHeading(heading);
-        people.push({ index: people.length, mesh, home, keeper: index === 0, role: index, spawn, actionName: '', actionUntil: 0, stamina: 1,
+        people.push({ index: people.length, mesh, home, keeper: index === 0, role: index, spawn, attrs: teamAttributes[index], actionName: '', actionUntil: 0, stamina: 1,
           nextTackleAt: 0, saveUntil: 0, diveDirection: 0, motion: { x: spawn[0], z: spawn[1], vx: 0, vz: 0, heading } });
       });
     }
@@ -339,6 +343,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     let awayPassTarget = -1, awayPassDestination = null, awayPassDeadline = 0;
     let restart = null; // a corner, goal kick or free kick waiting to be taken
     let marking = new Map(), markingAt = 0, lastCrowd = 0;
+    let markingCpu = new Map(), markingCpuAt = 0;
     let random = createRandom(Math.floor(Math.random() * 2 ** 31));
     const sound = createMatchAudio(preferences.hud.sound !== false);
     let captionTimer = 0;
@@ -396,10 +401,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       const carrying = options.dribbling && !restart && keeperHolding < 0;
       const strideInput = carrying ? controlStrideInput(person.motion, input, ball.position) : input;
       const speedLimit = carrying ? controlStrideLimit(person.motion, strideInput, ball.position, ballVelocity, { sprint, controlledSprint: options.controlledSprint }) : Infinity;
+      // The team-wide ability multiplier (win progression, CPU difficulty) now moves speed
+      // only a little; individual pace, acceleration and agility come from the player's attributes.
+      const teamSpeed = 1 + ((options.ability ?? 1) - 1) * 0.3;
       const speed = advancePlayer(person.motion, strideInput, dt, { ...options, sprint, speedLimit,
-        ability: (options.ability ?? 1) * (1 - STAMINA.speedLoss * (1 - person.stamina)) });
-      person.stamina = sprint && speed > 4.5 ? Math.max(0, person.stamina - STAMINA.sprintDrain * dt)
-        : Math.min(1, person.stamina + (speed < 2 ? STAMINA.restRecover : STAMINA.jogRecover) * dt);
+        ability: teamSpeed * paceFactor(person.attrs) * (1 - STAMINA.speedLoss * (1 - person.stamina)),
+        accelFactor: accelerationFactor(person.attrs), agilityFactor: agilityFactor(person.attrs) });
+      const fitness = staminaFactor(person.attrs);
+      person.stamina = sprint && speed > 4.5 ? Math.max(0, person.stamina - STAMINA.sprintDrain / fitness * dt)
+        : Math.min(1, person.stamina + (speed < 2 ? STAMINA.restRecover : STAMINA.jogRecover) * fitness * dt);
       return speed;
     }
     const events = { tackles: 0, catches: 0, parries: 0, punches: 0, awayShots: 0, passes: 0 };
@@ -773,14 +783,16 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       } else       if (shot) {
         // Shots are aimed at the goal mouth (src/shooting.js), chips dropped under the bar.
         const goalX = LENGTH / 2;
+        const shooterAccuracy = finishingAccuracy(people[controlled].attrs) * teamAbility;
+        const shotPressure = Math.max(0, Math.min(1, 1 - Math.min(Infinity, ...team(false).map(p => Math.hypot(p.x - ball.position.x, p.z - ball.position.z))) / 4));
         if (name === 'chipShot') {
           const aimed = aimChip({ ball: ball.position, direction, goalX, goalWidth: GOAL_WIDTH, goalHeight: GOAL_HEIGHT,
-            power: shot.power, accuracy: teamAbility, random });
+            power: shot.power, accuracy: shooterAccuracy, pressure: shotPressure, random });
           speed = aimed.speed;
           launchTo({ x: aimed.x, z: aimed.z }, aimed.height, speed * teamAbility, 'chip');
         } else {
           const aimed = aimShot({ ball: ball.position, direction, goalX, goalWidth: GOAL_WIDTH, goalHeight: GOAL_HEIGHT,
-            power: shot.power, style: shot.style, accuracy: teamAbility * (controlledSprint ? 1.05 : 1), random });
+            power: shot.power, style: shot.style, accuracy: shooterAccuracy * (controlledSprint ? 1.05 : 1), pressure: shotPressure, random });
           speed = aimed.speed;
           launchTo({ x: aimed.x, z: aimed.z }, aimed.height, speed * teamAbility, SHOT_STYLES[shot.style]?.spin || 'shot', -aimed.z || -ball.position.z || 1);
         }
@@ -916,6 +928,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         // CPU and human kicks obey the same drag, spin and target-height model.
         launchTo(destination, height, speed, kind === 'shoot' ? 'cpuShot' : 'cross', -(ball.position.z || 1));
       } else {
+        // A CPU pass is not perfectly struck: a weaker passer sends it slightly off line.
+        direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), gaussian(random) * passError(person.attrs));
         spinBall(spinFor('pass', direction));
         ballVelocity.copy(direction).multiplyScalar(speed); ballVelocity.y = lift;
       }
@@ -1724,7 +1738,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     function updateKeeper(person, index, dt, manual = false) {
       const out = person.home ? 1 : -1; // from this keeper's goal line into the pitch
       const goalX = ownGoalX(person.home);
-      const ability = person.home ? teamAbility : difficulty.keeper;
+      const ability = (person.home ? teamAbility : difficulty.keeper) * handlingFactor(person.attrs);
       if (keeperHolding === index) {
         // Ball in hands: face upfield, then throw or kick it to the best option.
         person.motion.vx = 0; person.motion.vz = 0;
@@ -2069,7 +2083,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const nearestLooseHome = loose ? nearestOf(true, ball.position.x, ball.position.z, controlled) : -1;
           const nearestAway = nearestOf(false, ball.position.x, ball.position.z);
           const pressingAway = team(false).sort((a, b) => Math.hypot(a.x - ball.position.x, a.z - ball.position.z) - Math.hypot(b.x - ball.position.x, b.z - ball.position.z))
-            .slice(0, 2).map(p => p.index);
+            .slice(0, difficulty.pressers ?? 2).map(p => p.index);
           const defending = !lastTouchHome || awayCarrier >= 0;
           // One teammate closes down the carrier when you are not already on him.
           const carrierAway = awayCarrier >= 0 ? people[awayCarrier] : null;
@@ -2080,6 +2094,16 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             marking = markingAssignments(team(true).filter(p => p.index !== controlled && p.index !== helper),
               team(false).filter(p => p.index !== awayCarrier), ownGoalX(true));
           }
+          // The CPU defends too: while your side has the ball, every CPU player who is not
+          // closing the ball down takes a nearby attacker goal-side, instead of drifting about.
+          const cpuDefending = lastTouchHome && awayCarrier < 0 && !restart && keeperHolding < 0;
+          if (cpuDefending && elapsed >= markingCpuAt) {
+            markingCpuAt = elapsed + 0.5;
+            const pressing = new Set(pressingAway);
+            const threats = team(true).filter(a => a.index !== possessor
+              && (Math.abs(a.x - ownGoalX(false)) < LENGTH * 0.62 || Math.hypot(a.x - ball.position.x, a.z - ball.position.z) < 24));
+            markingCpu = markingAssignments(team(false).filter(p => !pressing.has(p.index)), threats, ownGoalX(false));
+          } else if (!cpuDefending) markingCpu.clear();
           const shortReceiver = restart && restart.type !== 'penalty'
             && !(restart.type === 'corner' && restart.home && setPiece?.button !== 'j')
             ? nearestOf(restart.home, restart.spot.x, restart.spot.z, restart.taker) : -1;
@@ -2145,6 +2169,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               targetX = approach.x; targetZ = approach.z;
             } else if (chase) { targetX = ball.position.x + ballVelocity.x * 0.16; targetZ = ball.position.z + ballVelocity.z * 0.16; }
             else if (person.home && defending && marking.has(index)) { const mark = marking.get(index); targetX = mark.x; targetZ = mark.z; }
+            else if (!person.home && cpuDefending && markingCpu.has(index)) { const mark = markingCpu.get(index); targetX = mark.x; targetZ = mark.z; }
             else if (restart?.type === 'corner' && restart.home === person.home && person.role >= 3) {
               // Attack the corner: runners spread across the box.
               const goalX = -ownGoalX(person.home);
@@ -2190,12 +2215,24 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               person.nextTackleAt = elapsed + difficulty.tackleCooldown;
               action(person, 'pass', true); // upright foot poke, not the sliding clip
               count('cpu standing tackles');
-              if (canWinTackle(person.mesh.position, active.mesh.position, ball.position, shieldHold) && !ruleTouch(index, { deliberate: true })) {
-                possessor = -1; awayCarrier = index; passTarget = -1; lastTouchHome = false;
-                controlLockUntil = elapsed + 0.8; awayKickUntil = elapsed + 0.4;
-                person.motion.heading = Math.PI; events.tackles++;
-                ballVelocity.set(-3.8, 0, 0); spinBall(); show('TACKLED!');
-                say('tackle', { who: who(index), team: hallName(false) });
+              if (canWinTackle(person.mesh.position, active.mesh.position, ball.position, shieldHold)) {
+                // Geometry decides whether a tackle can be made; the players' attributes decide whether it works.
+                const winChance = tackleChance({ tackler: person.attrs, carrier: active.attrs, shielding: shieldHold });
+                if (random() < winChance) {
+                  if (!ruleTouch(index, { deliberate: true })) {
+                    possessor = -1; awayCarrier = index; passTarget = -1; lastTouchHome = false;
+                    controlLockUntil = elapsed + 0.8; awayKickUntil = elapsed + 0.4;
+                    person.motion.heading = Math.PI; events.tackles++;
+                    // The ball runs on away from the challenge, not along a fixed line.
+                    ballVelocity.set(-3.4 + (random() - 0.5) * 0.8, 0, clamp((ball.position.z - person.motion.z) * 1.2, -1.5, 1.5) + (random() - 0.5) * 1.2);
+                    spinBall(); show('TACKLED!');
+                    say('tackle', { who: who(index), team: hallName(false) });
+                  }
+                } else {
+                  // A beaten tackler stumbles, and a poor challenge can pop the ball loose.
+                  person.stumbleUntil = elapsed + 0.3;
+                  if (random() < 0.3) { possessor = -1; ballVelocity.x += (random() - 0.5) * 4; ballVelocity.z += (random() - 0.5) * 4; }
+                }
               }
             }
             // Your teammates tackle too, and take control of the ball when they win it.
@@ -2206,7 +2243,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               person.nextTackleAt = elapsed + 1.6;
               action(person, 'pass', true);
               count('teammate standing tackles');
-              if (canWinTackle(person.mesh.position, carrier.mesh.position, ball.position) && !ruleTouch(index, { deliberate: true })) {
+              if (canWinTackle(person.mesh.position, carrier.mesh.position, ball.position)
+                && random() < tackleChance({ tackler: person.attrs, carrier: carrier.attrs }) && !ruleTouch(index, { deliberate: true })) {
                 awayCarrier = -1; controlled = index; possessor = index; lastTouchHome = true; events.tackles++;
                 setSelectedPlayer(index + 1); spinBall(); show('TACKLE!');
                 say('tackle', { who: who(index), team: hallName(true) });
@@ -2234,7 +2272,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
                 person.nextDecisionAt = elapsed + difficulty.reaction * (0.8 + random() * 0.4);
                 const choice = decideCarrier({ carrier: point(index), teammates: team(false).filter(m => m.index !== index && m.x >= supportLines[0] - 0.01),
                   opponents: team(true, true), keeper: people[0].motion, goal: { x: -LENGTH / 2, width: GOAL_WIDTH },
-                  field: { length: LENGTH, width: WIDTH }, skill: { range: difficulty.shotRange, accuracy: difficulty.accuracy }, random });
+                  field: { length: LENGTH, width: WIDTH }, skill: { range: difficulty.shotRange, accuracy: difficulty.accuracy / finishingAccuracy(person.attrs) }, random });
                 if (choice.type === 'dribble') person.dribbleDir = choice.dir;
                 else cpuPlay(index, choice.type, choice.type === 'shoot' ? choice.target : choice.index);
               }
@@ -2256,7 +2294,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             if (dribbler !== carryOwner) ballControl = createBallControl(elapsed);
             const carrier = people[dribbler];
             const touch = footTouch(ballControl, ball.position, ballVelocity, carrier.motion, feetOf(carrier), elapsed,
-              { sprint: dribbler === controlled ? touchSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5, controlledSprint: dribbler === controlled && controlledSprint });
+              { sprint: dribbler === controlled ? touchSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5, controlledSprint: dribbler === controlled && controlledSprint,
+                looseness: looseTouchChance(carrier.attrs), random });
             if (touch) {
               ballVelocity.set(touch.velocity.x, touch.velocity.y, touch.velocity.z);
               if (touch.spin) physics?.setSpin(touch.spin);

@@ -61,7 +61,10 @@ export function controlStrideLimit(player, input, ball, velocity, options = {}) 
   return recoveryLimit;
 }
 
-export function footTouch(state, ball, velocity, player, feet, time, { sprint = false, controlledSprint = false } = {}) {
+// looseness (0-1, from the dribbling attribute) and random make a weaker dribbler
+// sometimes take a heavy touch at pace: the ball runs further ahead and has to be
+// chased. With no random supplied, touches are exactly as before.
+export function footTouch(state, ball, velocity, player, feet, time, { sprint = false, controlledSprint = false, looseness = 0, random = null } = {}) {
   const profile = dribbleTouchProfile({ sprint, controlledSprint });
   if (state.lastMotion) {
     const dvx = player.vx - state.lastMotion.vx, dvz = player.vz - state.lastMotion.vz;
@@ -91,8 +94,9 @@ export function footTouch(state, ball, velocity, player, feet, time, { sprint = 
     const side = (ball.x - player.x) * -fz + (ball.z - player.z) * fx;
     const push = speed < 0.3 || trapping ? 0 : clamp(0.4 + (profile.lead - lead) * 5, -1.2, profile.pushMax);
     const lateral = speed < 0.3 ? 0 : clamp(-side * 3, -1, 1);
-    const next = { x: speed < 0.3 ? 0 : player.vx + fx * push - fz * lateral,
-      y: Math.max(-0.6, Math.min(0, velocity.y)), z: speed < 0.3 ? 0 : player.vz + fz * push + fx * lateral };
+    const heavy = random && !trapping && speed >= 3.5 && random() < looseness * 0.5 * clamp((speed - 3) / 5, 0, 1) ? 0.6 + random() * 1.0 : 0;
+    const next = { x: speed < 0.3 ? 0 : player.vx + fx * (push + heavy) - fz * lateral,
+      y: Math.max(-0.6, Math.min(0, velocity.y)), z: speed < 0.3 ? 0 : player.vz + fz * (push + heavy) + fx * lateral };
     if (trapping && speed >= 0.1) {
       // Draw the ball onto the new stride at this boot contact, rather than
       // leaving it behind the body as the player turns through 180 degrees.

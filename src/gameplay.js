@@ -1,4 +1,4 @@
-import { RUN_PACE } from './movementConfig.js';
+import { RUN_PACE, MOVEMENT } from './movementConfig.js';
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 // The Mixamo player faces local +Z; heading is the world-space travel angle.
@@ -28,7 +28,14 @@ export function pitchExit(from, to, field, radius = 0.11) {
 // Positions are metres and speeds are metres per second. The same movement
 // model drives the human player and CPU players, so possession switches do not
 // change how a footballer accelerates or turns.
-export function advancePlayer(state, input, dt, { sprint = false, dribbling = false, keeper = false, controlledSprint = false, ability = 1, speedLimit = Infinity } = {}) {
+//
+// Speed changes along the line of travel (acceleration that fades towards top
+// speed, firm braking) are separate from changes of direction, which are
+// limited by a sideways-acceleration budget. Together they give a visible
+// build-up of speed and a real turning circle at pace, where the old model
+// reached top speed in a third of a second and turned on the spot.
+// accelFactor and agilityFactor come from the player's attributes.
+export function advancePlayer(state, input, dt, { sprint = false, dribbling = false, keeper = false, controlledSprint = false, ability = 1, speedLimit = Infinity, accelFactor = 1, agilityFactor = 1 } = {}) {
   const length = Math.hypot(input.x, input.z);
   const directionX = length > 0.001 ? input.x / length : 0;
   const directionZ = length > 0.001 ? input.z / length : 0;
@@ -36,23 +43,45 @@ export function advancePlayer(state, input, dt, { sprint = false, dribbling = fa
   const wantedSpeed = Math.min(pace * Math.min(1, length), Math.max(0, speedLimit));
   const wantedX = directionX * wantedSpeed;
   const wantedZ = directionZ * wantedSpeed;
-  const reversing = state.vx * wantedX + state.vz * wantedZ < -0.1;
-  const braking = wantedSpeed < Math.hypot(state.vx, state.vz);
-  const acceleration = length < 0.05 ? 16 : reversing ? controlledSprint ? 20 : 13 : braking ? controlledSprint ? 20 : 15 : sprint ? controlledSprint ? 19 : 24 : 19;
-  const change = acceleration * dt;
-  const differenceX = wantedX - state.vx;
-  const differenceZ = wantedZ - state.vz;
-  const differenceLength = Math.hypot(differenceX, differenceZ);
-  const scale = differenceLength > change ? change / differenceLength : 1;
-  state.vx += differenceX * scale;
-  state.vz += differenceZ * scale;
+  const speedNow = Math.hypot(state.vx, state.vz);
+  const mode = keeper ? 'keeper' : sprint ? (controlledSprint ? 'controlled' : 'sprint') : 'jog';
+  const agile = controlledSprint ? 'controlled' : sprint ? 'sprint' : 'normal';
+  const braking = controlledSprint ? MOVEMENT.brake.controlled : MOVEMENT.brake.normal;
+  const reverseBrake = controlledSprint ? MOVEMENT.reverse.controlled : MOVEMENT.reverse.normal;
+  const standstillAccel = MOVEMENT.accel[mode] * accelFactor;
+  const accelNow = standstillAccel * Math.max(MOVEMENT.accelFloor, 1 - speedNow / MOVEMENT.accelZeroAt);
+  if (length < 0.05) {
+    // No input: roll to a stop in a straight line.
+    const slowed = Math.max(0, speedNow - MOVEMENT.idleBrake * dt);
+    const scale = speedNow > 1e-9 ? slowed / speedNow : 0;
+    state.vx *= scale; state.vz *= scale;
+  } else if (speedNow <= 0.2) {
+    // From (almost) rest: accelerate straight towards the wanted velocity.
+    const differenceX = wantedX - state.vx, differenceZ = wantedZ - state.vz;
+    const differenceLength = Math.hypot(differenceX, differenceZ);
+    const change = standstillAccel * dt;
+    const scale = differenceLength > change ? change / differenceLength : 1;
+    state.vx += differenceX * scale; state.vz += differenceZ * scale;
+  } else {
+    const ux = state.vx / speedNow, uz = state.vz / speedNow;
+    const differenceX = wantedX - state.vx, differenceZ = wantedZ - state.vz;
+    const along = differenceX * ux + differenceZ * uz;
+    const sideX = differenceX - along * ux, sideZ = differenceZ - along * uz;
+    const reversing = state.vx * wantedX + state.vz * wantedZ < -0.1;
+    const alongStep = along >= 0 ? Math.min(along, accelNow * dt) : Math.max(along, -(reversing ? reverseBrake : braking) * dt);
+    const sideLength = Math.hypot(sideX, sideZ);
+    const sideStep = Math.min(sideLength, MOVEMENT.lateral[agile] * agilityFactor * dt);
+    state.vx += ux * alongStep + (sideLength > 1e-9 ? sideX / sideLength * sideStep : 0);
+    state.vz += uz * alongStep + (sideLength > 1e-9 ? sideZ / sideLength * sideStep : 0);
+  }
   state.x += state.vx * dt;
   state.z += state.vz * dt;
   const speed = Math.hypot(state.vx, state.vz);
   if (speed > 0.12) {
     const wantedHeading = Math.atan2(state.vz, state.vx);
     const difference = Math.atan2(Math.sin(wantedHeading - state.heading), Math.cos(wantedHeading - state.heading));
-    const turnRate = controlledSprint ? 12 : sprint ? 8 : 9;
+    const base = controlledSprint ? MOVEMENT.turn.controlled : MOVEMENT.turn.normal;
+    const turnRate = base * agilityFactor * (1 - MOVEMENT.turn.speedLoss * clamp(speed / Math.max(pace, 1), 0, 1));
     state.heading += clamp(difference, -turnRate * dt, turnRate * dt);
   }
   return speed;

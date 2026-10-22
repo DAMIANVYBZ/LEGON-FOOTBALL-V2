@@ -23,24 +23,28 @@ export const SHOT_STYLES = {
 // the stick picks a spot inside the goal mouth rather than an exact line.
 // Turn the stick well away from goal and there is no assistance, so the shot
 // goes where it was pointed. Then the strike's error is added: more with
-// power past three quarters of the bar, distance, and a weaker shooter.
-export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power = 0.5, style = 'normal', accuracy = 1, random = Math.random }) {
+// power past three quarters of the bar, distance, a nearby defender
+// (pressure, 0-1) and a weaker finisher (accuracy, see attributes.js). The
+// assist only reaches a couple of metres past the posts and the error is
+// large enough at range that shots are genuinely missed, wide and over.
+export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power = 0.5, style = 'normal', accuracy = 1, pressure = 0, random = Math.random }) {
   const spec = SHOT_STYLES[style] || SHOT_STYLES.normal;
   const toLine = goalX - ball.x;
   const distance = Math.hypot(toLine, ball.z);
   const towardGoal = Math.sign(direction.x) === Math.sign(toLine) && Math.abs(direction.x) > 0.12;
   const lineZ = towardGoal ? ball.z + direction.z / direction.x * toLine : Infinity;
   // Assisted while the stick's line passes within a few metres of the posts.
-  const margin = 3.5 + distance * 0.12;
+  const margin = 2.2 + distance * 0.06;
   const assisted = towardGoal && Math.abs(lineZ) < goalWidth / 2 + margin;
   const inside = goalWidth / 2 - 0.35;
   let z = assisted ? clamp(lineZ, -inside, inside) : lineZ;
   if (!Number.isFinite(z)) z = ball.z + Math.sign(direction.z || 1) * 30;
   const over = Math.max(0, power - 0.75);
   // Finesse trades pace for placement.
-  const spread = (0.28 + distance * 0.016 + over * 1.8) / clamp(accuracy, 0.6, 1.5) * (style === 'finesse' ? 0.75 : style === 'power' ? 1.35 : 1);
+  const stress = 1 + clamp(pressure, 0, 1) * 0.7;
+  const spread = (0.4 + distance * 0.028 + over * 1.8) * stress / clamp(accuracy, 0.6, 1.5) * (style === 'finesse' ? 0.75 : style === 'power' ? 1.35 : 1);
   z += gaussian(random) * spread;
-  let height = spec.height(power) + gaussian(random) * (style === 'low' ? 0.08 : 0.18 + over * 0.9);
+  let height = spec.height(power) + gaussian(random) * ((style === 'low' ? 0.08 : 0.18 + over * 0.9) * stress + (style === 'low' ? 0 : distance * 0.006));
   height = clamp(height, 0.15, goalHeight + 2.5);
   const speed = spec.speed[0] + spec.speed[1] * power;
   // Outside the assist cone, preserve the chosen bearing, including sideways
@@ -49,7 +53,8 @@ export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power =
   if (!assisted) {
     const length = Math.hypot(direction.x, direction.z) || 1;
     const reach = Math.max(8, distance);
-    const error = gaussian(random) * spread;
+    // An unassisted strike keeps its bearing; its error is angular.
+    const error = gaussian(random) * reach * 0.03 * stress / clamp(accuracy, 0.6, 1.5);
     x = ball.x + direction.x / length * reach - direction.z / length * error;
     z = ball.z + direction.z / length * reach + direction.x / length * error;
   }

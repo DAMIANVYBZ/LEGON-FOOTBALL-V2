@@ -60,20 +60,24 @@ export const KICK_SPIN = {
 };
 
 // CPU behaviour per difficulty.
-// pace: CPU outfielders' speed. keeper: CPU keeper's reach. shot: CPU shot speed.
+// pace: small speed scale (difficulty is now mostly decision quality, not a speed hack).
+// keeper: CPU keeper's reach. shot: CPU shot speed.
 // reaction: seconds between a CPU ball carrier's decisions. shotRange: how far
 // out the CPU will shoot (m). accuracy: CPU aiming error (m).
-// Tackles use reach and shielding geometry rather than a random success roll.
+// pressers: how many CPU players close the ball down together. quality: shifts
+// every CPU player's attributes (see attributes.js).
+// Tackles use reach and shielding geometry, then an attribute-based chance.
 export const DIFFICULTY = {
-  Easy: { pace: 0.9, pressDistance: 18, tackleCooldown: 2, kickoffGrace: 3, keeper: 0.9, shot: 0.9,
-    reaction: 0.7, shotRange: 15, accuracy: 1.3 },
-  Medium: { pace: 0.97, pressDistance: 26, tackleCooldown: 1.4, kickoffGrace: 2, keeper: 1, shot: 1,
-    reaction: 0.5, shotRange: 18, accuracy: 0.85 },
-  Hard: { pace: 1.04, pressDistance: 34, tackleCooldown: 1, kickoffGrace: 1, keeper: 1.08, shot: 1.08,
-    reaction: 0.35, shotRange: 20, accuracy: 0.5 },
+  Easy: { pace: 0.97, pressDistance: 18, tackleCooldown: 2, kickoffGrace: 3, keeper: 0.9, shot: 0.9,
+    reaction: 0.7, shotRange: 16, accuracy: 1.3, pressers: 2, quality: -0.07 },
+  Medium: { pace: 1, pressDistance: 26, tackleCooldown: 1.4, kickoffGrace: 2, keeper: 1, shot: 1,
+    reaction: 0.5, shotRange: 19, accuracy: 0.85, pressers: 3, quality: 0 },
+  Hard: { pace: 1.03, pressDistance: 34, tackleCooldown: 1, kickoffGrace: 1, keeper: 1.08, shot: 1.08,
+    reaction: 0.35, shotRange: 22, accuracy: 0.5, pressers: 3, quality: 0.06 },
 };
 
 // Stamina, from 1 (fresh) to 0: sprinting drains it, jogging and standing
-// restore it. A tired player's top speed drops by up to 10%.
-export const STAMINA = { sprintDrain: 0.055, jogRecover: 0.03, restRecover: 0.06, minimumToSprint: 0.06, speedLoss: 0.1 };
+// restore it. A tired player's top speed drops by up to 18%. The stamina
+// attribute scales drain and recovery.
+export const STAMINA = { sprintDrain: 0.07, jogRecover: 0.025, restRecover: 0.06, minimumToSprint: 0.06, speedLoss: 0.18 };
 export const difficultyFor = name => DIFFICULTY[name] || DIFFICULTY.Medium;

@@ -28,11 +28,26 @@ export function bestPassOption(carrier, teammates, opponents, goal, { minDistanc
   return best;
 }
 
-// Pick a spot inside the goal frame away from the keeper, with an error that
-// shrinks as the difficulty rises.
-export function shotTarget(goal, keeper, random, accuracy) {
-  const side = (keeper.z > 0.3 ? -1 : keeper.z < -0.3 ? 1 : random() < 0.5 ? -1 : 1) * (random() < 0.22 ? -1 : 1);
-  const z = side * (goal.width / 2 - 0.45) + (random() * 2 - 1) * accuracy;
+// Normal-distributed number (mean 0, deviation 1) from a uniform generator.
+function gaussian(random) {
+  const u = Math.max(1e-9, random()), v = random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Pick where to put a shot. Mostly the far corner from the keeper, but also
+// the near corner, or a placed central finish, and the aim carries an error
+// that grows with distance, a nearby defender (pressure, 0-1) and the shooter's
+// weakness (accuracy: metres of error, larger is worse), so the CPU
+// really does miss the target sometimes.
+export function shotTarget(goal, keeper, random, accuracy, { pressure = 0, distance = 15 } = {}) {
+  const keeperSide = keeper.z > 0.3 ? 1 : keeper.z < -0.3 ? -1 : 0;
+  const far = keeperSide === 0 ? (random() < 0.5 ? -1 : 1) : -keeperSide;
+  const style = random();
+  const corner = goal.width / 2 - 0.55;
+  const side = style < 0.78 ? (style < 0.58 ? far : -far) : far;
+  const depth = style < 0.78 ? corner : goal.width * 0.18;
+  const spread = accuracy * (0.55 + distance * 0.025) * (1 + clamp(pressure, 0, 1) * 0.5);
+  const z = side * depth + (spread > 0 ? gaussian(random) * spread : 0);
   const high = random() < 0.4;
   return { x: goal.x, z, high };
 }
@@ -46,9 +61,13 @@ export function decideCarrier({ carrier, teammates, opponents, keeper, goal, fie
   const nearest = ahead.reduce((min, o) => Math.min(min, distance(o, carrier)), Infinity);
   const openAngle = Math.abs(carrier.z) < toGoal * 0.95;
 
+  const pressure = clamp(1 - nearest / 4, 0, 1);
   if (toGoal < skill.range && openAngle) {
     const keen = clamp(1.25 - toGoal / skill.range, 0.15, 0.95) + (nearest < 3 ? 0.2 : 0);
-    if (random() < keen) return { type: 'shoot', target: shotTarget(goal, keeper, random, skill.accuracy) };
+    if (random() < keen) return { type: 'shoot', target: shotTarget(goal, keeper, random, skill.accuracy, { pressure, distance: toGoal }) };
+  } else if (toGoal < skill.range * 1.4 && openAngle && nearest > 5 && random() < 0.05) {
+    // The occasional speculative effort from distance, struck with more error.
+    return { type: 'shoot', target: shotTarget(goal, keeper, random, skill.accuracy * 1.2, { pressure, distance: toGoal }) };
   }
 
   const wide = Math.abs(carrier.z) > field.width * 0.27;
@@ -66,6 +85,13 @@ export function decideCarrier({ carrier, teammates, opponents, keeper, goal, fie
   // teammate is unmarked. Under pressure the safe outlet remains available.
   const options = pressed ? teammates : teammates.filter(m => (m.x - carrier.x) * attack > 2);
   const option = bestPassOption(carrier, options, opponents, goal);
+  // A defender closing in but not yet on the carrier: keep the ball moving to a
+  // free teammate level with or just behind him instead of running into trouble.
+  const closing = !pressed && nearest < 4.5;
+  const recycle = closing && !(option && option.score > 2.2) ? bestPassOption(carrier, teammates.filter(m => (m.x - carrier.x) * attack > -3), opponents, goal) : null;
+  if (recycle && recycle.score > 0.9 && random() < 0.5) {
+    return { type: 'pass', index: recycle.index };
+  }
   if (option && (pressed ? option.score > 0.6 : option.score > 2.2 && random() < 0.35)) {
     const mate = teammates.find(m => m.index === option.index);
     // Play it into the runner's path when they are moving towards goal.

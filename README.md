@@ -173,6 +173,10 @@ For first-half playtesting, `python tools/audit_first_half.py` exercises match e
 
 `python tools/audit_match_edges.py` replays line-ball retrieval, whole-ball boundary decisions, diagonal corner exits, goalkeeper targeting and interrupted phone gestures at every venue. The [continued gameplay audit](docs/gameplay-audit-round-2-2026-10-20.md) records these corrections and their verification.
 
+## FC 25 realism pass
+
+Movement now builds speed over about two seconds and has a real turning circle, every player has their own attributes (`src/attributes.js`), shots are genuinely missed, the CPU marks and presses in numbers, and tackles and touches depend on player skill. See [the FC 25 realism pass](docs/fc25-realism-pass.md) for what changed, tuning values, what is not yet done (11v11, body physics, missing mechanics) and how it was verified.
+
 ## Cloudflare Workers static hosting
 
 This game needs static asset hosting. `wrangler.jsonc` explicitly tells Cloudflare
