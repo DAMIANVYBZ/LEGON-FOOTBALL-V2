@@ -99,7 +99,7 @@ export function receivingInput(delta, maxSpeed) {
 
 export function canReceivePass(player, ball, velocity) {
   return Math.hypot(player.x - ball.x, player.z - ball.z) < 1.1
-    && ball.y < 0.85 && Math.hypot(velocity.x, velocity.y, velocity.z) < 15;
+    && ball.y < 0.85 && Math.hypot(velocity.x, velocity.y, velocity.z) < 24;
 }
 
 export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0, forwardRole = 5, offsideLine } = {}) {

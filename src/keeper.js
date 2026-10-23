@@ -66,7 +66,7 @@ export function saveOutcome({ gap, height, speed, diving, ability = 1, random = 
   if (height > 2 && speed > 27 && stretch < 0.8) return 'punch';
   // Held when it comes at a comfortable height: firm shots near the body,
   // softer ones at a stretch. Anything else is pushed away or spilled.
-  const catchable = height > 0.15 && height < 2.35 && (stretch < 0.45 ? speed < 31 * ability : stretch < 0.75 && speed < 18 * ability);
+  const catchable = height > 0.15 && height < 2.35 && (stretch < 0.45 ? speed < 22 * ability : stretch < 0.75 && speed < 18 * ability);
   if (catchable) return 'catch';
   return random() < 0.75 ? 'parry' : 'spill';
 }

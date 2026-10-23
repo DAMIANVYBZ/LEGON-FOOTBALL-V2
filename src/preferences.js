@@ -7,6 +7,7 @@ export const KEYBOARD_PRESETS = Object.freeze({
 });
 
 export const DEFAULT_PREFERENCES = Object.freeze({
+  audioEnabled: true,
   passingAssistance: 'assisted',
   keyboardPreset: 'classic',
   keyboard: KEYBOARD_PRESETS.classic,
@@ -25,6 +26,7 @@ export function normalizePreferences(value = {}) {
   const keyboardPreset = value.keyboardPreset === 'wasd' ? 'wasd' : 'classic';
   const preset = KEYBOARD_PRESETS[keyboardPreset];
   return {
+    audioEnabled: value.audioEnabled !== false,
     passingAssistance: passingMode(value.passingAssistance),
     keyboardPreset,
     keyboard: Object.fromEntries(Object.keys(preset).map(action => [action, typeof value.keyboard?.[action] === 'string' ? value.keyboard[action].toLowerCase() : preset[action]])),

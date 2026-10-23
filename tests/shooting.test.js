@@ -79,3 +79,13 @@ test('chip shots keep backward and sideways aim outside the assist cone', () => 
     assert.ok(chip.height>1 && chip.speed>=9);
   }
 });
+
+test('straight approaches place assisted shots away from the keeper with stronger charged strikes', () => {
+  for (const keeperZ of [-1, 1]) {
+    const shot = aimShot({ ...goal, ball: { x: 20, z: 0 }, direction: { x: 1, z: 0 }, keeper: { z: keeperZ }, power: .5, random: () => .25 });
+    assert.ok(shot.z * keeperZ < -1.5);
+    assert.equal(shot.speed, 32);
+  }
+  const base = { ...goal, ball: { x: 20, z: 0 }, direction: { x: 1, z: 0 }, random: () => .25 };
+  assert.ok(aimShot({ ...base, power: 1 }).speed > aimShot({ ...base, power: 0 }).speed + 12);
+});

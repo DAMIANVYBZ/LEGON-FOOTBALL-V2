@@ -13,10 +13,10 @@ export function gaussian(random = Math.random) {
 // through the ball: past the first tenth of the bar it rises, more with more
 // power. A low driven shot (double tap) stays near the grass.
 export const SHOT_STYLES = {
-  normal: { speed: [21, 13], height: power => power <= 0.1 ? 0.25 : 0.55 + (power - 0.1) * 1.95, spin: 'shot' },
-  low: { speed: [23, 11], height: () => 0.28, spin: 'shot' },
-  finesse: { speed: [20, 10], height: power => 0.75 + power * 1.25, spin: 'finesse' },
-  power: { speed: [26, 9], height: power => 0.85 + power * 1.55, spin: 'powerShot' },
+  normal: { speed: [24, 16], height: power => power <= 0.1 ? 0.25 : 0.55 + (power - 0.1) * 1.95, spin: 'shot' },
+  low: { speed: [26, 14], height: () => 0.28, spin: 'shot' },
+  finesse: { speed: [22, 12], height: power => 0.75 + power * 1.25, spin: 'finesse' },
+  power: { speed: [29, 14], height: power => 0.85 + power * 1.55, spin: 'powerShot' },
 };
 
 // Aim assistance, as in EA FC: while the player shoots roughly toward goal,
@@ -27,7 +27,7 @@ export const SHOT_STYLES = {
 // (pressure, 0-1) and a weaker finisher (accuracy, see attributes.js). The
 // assist only reaches a couple of metres past the posts and the error is
 // large enough at range that shots are genuinely missed, wide and over.
-export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power = 0.5, style = 'normal', accuracy = 1, pressure = 0, random = Math.random }) {
+export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power = 0.5, style = 'normal', accuracy = 1, pressure = 0, keeper = null, random = Math.random }) {
   const spec = SHOT_STYLES[style] || SHOT_STYLES.normal;
   const toLine = goalX - ball.x;
   const distance = Math.hypot(toLine, ball.z);
@@ -38,6 +38,12 @@ export function aimShot({ ball, direction, goalX, goalWidth, goalHeight, power =
   const assisted = towardGoal && Math.abs(lineZ) < goalWidth / 2 + margin;
   const inside = goalWidth / 2 - 0.35;
   let z = assisted ? clamp(lineZ, -inside, inside) : lineZ;
+  // A straight run can still place a shot beside the keeper. Deliberate
+  // sideways aim keeps its chosen side; only near-central assisted aim uses this.
+  if (assisted && keeper && Math.abs(lineZ) < goalWidth * .2) {
+    const side = Math.abs(keeper.z) > .15 ? -Math.sign(keeper.z) : (ball.z < 0 ? 1 : -1);
+    z = side * inside * .72;
+  }
   if (!Number.isFinite(z)) z = ball.z + Math.sign(direction.z || 1) * 30;
   const over = Math.max(0, power - 0.75);
   // Finesse trades pace for placement.

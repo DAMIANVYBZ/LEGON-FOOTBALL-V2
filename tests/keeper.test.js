@@ -31,7 +31,7 @@ test('shots at the keeper are always stopped; stretching saves are not', () => {
   const random = createRandom(7);
   assert.equal(saveOutcome({ gap: 0.1, height: 1, speed: 10, diving: false, random }), 'catch');
   assert.equal(saveOutcome({ gap: 0, height: 2.15, speed: 29, diving: false, random }), 'punch');
-  assert.equal(saveOutcome({ gap: 0.2, height: 0.8, speed: 25, diving: false, random }), 'catch', 'a firm shot at the body is held');
+  assert.ok(['parry', 'spill'].includes(saveOutcome({ gap: 0.2, height: 0.8, speed: 25, diving: false, random })), 'a hard shot at the body creates a rebound');
   assert.ok(['parry', 'spill'].includes(saveOutcome({ gap: 0.2, height: 0.8, speed: 33, diving: false, random })));
   assert.equal(saveOutcome({ gap: 3, height: 1, speed: 20, diving: true, random }), 'miss');
   assert.ok(keeperReach(1, true) > keeperReach(1, false));

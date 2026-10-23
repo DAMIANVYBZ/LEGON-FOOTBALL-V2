@@ -7,17 +7,16 @@ import { flight, liftFor } from '../src/ballistics.js';
 import { createMatchPhysics } from '../src/matchPhysics.js';
 
 const field = { length: 71, width: 45 }, player = { x: 0, z: 0 };
-test('receiving is a 30/70 input blend, including diagonal and opposing manual input', () => {
-  assert.equal(RECEIVING_ASSIST, 0.7);
-  const blended = assistedReceivingInput({ x: 0, z: 1 }, player, { x: 10, z: 0 }, 5.8);
-  assert.ok(Math.abs(blended.x - .7) < 1e-9 && Math.abs(blended.z - .3) < 1e-9);
-  assert.ok(Math.abs(assistedReceivingInput({ x: -1, z: 0 }, player, { x: 10, z: 0 }, 5.8).x - 0.4) < 1e-9);
-  const diagonal = assistedReceivingInput({ x: -1, z: -1 }, player, { x: 10, z: 0 }, 5.8);
-  assert.ok(diagonal.x > 0 && diagonal.x < .7 && diagonal.z < 0 && Math.hypot(diagonal.x, diagonal.z) <= 1);
-  assert.deepEqual(assistedReceivingInput({ x: 0.2, z: 0.3 }, player, null, 5.8), { x: 0.2, z: 0.3 });
+test('automatic reception owns the approach despite idle, diagonal or opposing input', () => {
+  assert.equal(RECEIVING_ASSIST, 1);
+  for (const input of [{ x: 0, z: 0 }, { x: 0, z: 1 }, { x: -1, z: -1 }]) {
+    const result = assistedReceivingInput(input, player, { x: 10, z: 0 }, 5.8);
+    assert.ok(Math.abs(result.x - 1) < 1e-9 && result.z === 0);
+  }
+  assert.deepEqual(assistedReceivingInput({ x: .2, z: .3 }, player, null, 5.8), { x: .2, z: .3 });
 });
 
-test('70% idle assistance approaches and brakes at the receiving point at multiple frame rates', () => {
+test('automatic assistance approaches and brakes at the receiving point at multiple frame rates', () => {
   for (const hz of [30, 60, 120]) {
     const p = { ...player, vx: 0, vz: 0, heading: 0 };
     let furthest = 0;
@@ -46,7 +45,7 @@ test('receiving forecast follows actual free flight and rolling physics on three
 });
 
 test('interception ignores high/fast/out-of-play samples and stale past points', () => {
-  const path = [{ x: 1, y: 2, z: 0, t: .1, speed: 5 }, { x: 2, y: .11, z: 0, t: .2, speed: 22 },
+  const path = [{ x: 1, y: 2, z: 0, t: .1, speed: 5 }, { x: 2, y: .11, z: 0, t: .2, speed: 28 },
     { x: 3, y: .11, z: 0, t: .6, speed: 6 }, { x: 40, y: .11, z: 0, t: 1, speed: 5 }];
   assert.equal(receivingPoint(player, path, 5.8, field).x, 3);
   assert.equal(receivingPoint(player, path, 5.8, field, .7), null);

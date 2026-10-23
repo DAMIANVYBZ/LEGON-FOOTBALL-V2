@@ -655,3 +655,31 @@ full opacity are checked even with a saved .08 legacy opacity. No JS errors.
 Layout screenshots and results: /workspace/playtest-artifacts/touch-controls/ .
 Fixtures use the current ten-a-side Sarbah roster, not hardcoded seven-a-side
 player indices.
+
+
+## 2026-10-23 — automatic receiving, shooting, foul visibility and sound
+
+Receiving now owns the recipient's approach until physical contact, including
+when the passer keeps the stick held away from the ball. Recipients sprint to
+interception points; forecasting looks four seconds ahead and accepts controllable
+balls up to 24 m/s. Manual movement resumes after reception. Opponents, offsides,
+ball height and contact still apply; this does not guarantee an uncontested catch.
+
+Normal shots now launch at 24–40 m/s, with charge controlling power. Assisted
+near-central shots place the ball to the side opposite the keeper instead of
+requiring a diagonal run. Explicit wide/backward aim is preserved. Hard shots
+above the comfortable handling threshold produce parries/spills rather than
+routine catches. Idle/run hysteresis and gradual stride playback reduce flicker
+at low speeds; this is not a claim that every reported visual glitch is resolved.
+
+Fouls retain positions for 1.5 seconds and frame the contact before setting up
+the restart. Restart location and penalty eligibility use the victim's position
+rather than the ball's potentially distant position. This is a live incident view,
+not a replay. Sound off in Settings > HUD mutes menu music, commentary and match
+sounds and persists without changing each individual sound preference.
+
+Validation: 152 unit tests; nine active-player pass/through/loft reception fixtures
+with opposing/idle/lateral input; foul delay/resume and straight-shot launch checks
+in Chromium with no JavaScript errors. Production build and Cloudflare asset
+packaging dry-run pass. Local artifacts: playtest-artifacts/gameplay-receiving-shooting.
+Live Cloudflare deployment is not verified from this environment.

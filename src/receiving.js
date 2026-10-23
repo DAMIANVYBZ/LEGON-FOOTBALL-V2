@@ -3,11 +3,11 @@ import { applySurfaceGrip } from './ballContact.js';
 import { BALL, surfaceFor } from './physicsConfig.js';
 import { receivingInput } from './gameplay.js';
 
-export const RECEIVING_ASSIST = 0.7;
+export const RECEIVING_ASSIST = 1;
 
 // A short forecast of the loose ball, including landing and rolling. This is
 // guidance for feet, never a force or position correction on the actual ball.
-export function receivingPath(position, velocity, spin, surfaceName, duration = 2.5) {
+export function receivingPath(position, velocity, spin, surfaceName, duration = 4) {
   const p = { ...position }, v = { ...velocity }, w = { x: 0, y: 0, z: 0, ...spin };
   const surface = surfaceFor(surfaceName), points = [{ ...p, t: 0, speed: Math.hypot(v.x, v.y, v.z) }];
   const dt = 1 / 60, a = { x: 0, y: 0, z: 0 };
@@ -43,7 +43,7 @@ export function receivingPoint(player, path, pace, field, age = 0) {
   let best = null, bestMiss = Infinity;
   for (const point of path) {
     const t = point.t - age;
-    if (t < 0 || point.y > 0.8 || point.speed >= 15
+    if (t < 0 || point.y > 0.8 || point.speed >= 24
       || Math.abs(point.x) > field.length / 2 || Math.abs(point.z) > field.width / 2) continue;
     const gap = Math.hypot(point.x - player.x, point.z - player.z);
     // Include acceleration time; don't promise an instant sprint from rest.
@@ -58,9 +58,7 @@ export function receivingPoint(player, path, pace, field, age = 0) {
 export function assistedReceivingInput(manual, player, target, pace) {
   const size = Math.max(1, Math.hypot(manual.x, manual.z));
   if (!target) return { x: manual.x / size, z: manual.z / size };
-  // Scale the arriving controller to its share of the available pace so it
-  // still brakes close to the interception point. Manual input adjusts the approach.
-  const ai = receivingInput({ x: target.x - player.x, z: target.z - player.z }, pace * RECEIVING_ASSIST);
-  return { x: manual.x / size * (1 - RECEIVING_ASSIST) + ai.x * RECEIVING_ASSIST,
-    z: manual.z / size * (1 - RECEIVING_ASSIST) + ai.z * RECEIVING_ASSIST };
+  // Own the approach until the physical trap succeeds. The passer's held
+  // stick must not steer the newly selected recipient out of the ball's path.
+  return receivingInput({ x: target.x - player.x, z: target.z - player.z }, pace);
 }
