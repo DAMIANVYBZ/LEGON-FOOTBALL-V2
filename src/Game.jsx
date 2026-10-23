@@ -23,7 +23,7 @@ import { playerName } from './players.js';
 import { vibrate } from './haptics.js';
 import { flight, groundPassSpeed, liftFor } from './ballistics.js';
 import { aimShot, aimChip, gaussian, SHOT_STYLES, spinStyle, stickZone } from './shooting.js';
-import { createOffsideTracker, offsidePositions, offsideInterference, goalCrossing } from './rules.js';
+import { createOffsideTracker, offsidePositions, offsideInterference, onsideRunInput, goalCrossing } from './rules.js';
 import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.js';
 import { playerMaterial } from './playerMaterial.js';
 import { groundedSlideClip, transitionPlayerAction } from './playerAnimation.js';
@@ -383,7 +383,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         startRestart('indirectFreeKick', !player.home, { x: ball.position.x, z: ball.position.z });
         show('DOUBLE TOUCH · INDIRECT FREE KICK', 1.8); count('double touches'); return true;
       }
-      if (!kick && lastRuleTouch === index && (!deliberate || lastRuleDeliberate)) return false;
+      if (!kick && !offside.involved(player) && lastRuleTouch === index && (!deliberate || lastRuleDeliberate)) return false;
       const exempt = kick && ['corner', 'goalKick', 'throwIn'].includes(restart?.type);
       const offence = offside.touch(player, ball.position, rulePlayers(), { deliberate, save, exempt });
       lastRuleTouch = index;
@@ -2118,6 +2118,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             ? nearestOf(restart.home, restart.spot.x, restart.spot.z, restart.taker) : -1;
           const positioningPlayers = rulePlayers();
           const supportLines = [false, true].map(home => offsidePositions({ index: -1, home }, ball.position, positioningPlayers).line);
+          const offsidePhase = offside.snapshot();
           for (const [index, person] of people.entries()) {
             if (person.sentOff) { person.motion.x = 0; person.motion.z = WIDTH / 2 + 30; person.mesh.position.set(0, 0, WIDTH / 2 + 30); continue; }
             // Down after a missed slide tackle: out of the game for a moment.
@@ -2145,9 +2146,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
               : press || (loose && index === nearestAway && person.mesh.position.distanceTo(ball.position) < 22) || awayPassTarget === index);
             const attacking = person.home ? lastTouchHome : !lastTouchHome;
             const automaticRun = attacking && ((person.role >= (TEAM_SIZE === 7 ? 5 : 7)) || (person.role >= (TEAM_SIZE === 7 ? 3 : 4) && Math.sign(roleZ) !== Math.sign(ball.position.z)));
+            // Legal runners can break the line AFTER delivery. Before delivery,
+            // keep room to brake; an offside-at-release runner gains no exemption.
+            const deliveryInFlight = person.home ? passTarget >= 0 && possessor < 0 : awayPassTarget >= 0 && awayCarrier < 0;
+            const legalBreak = deliveryInFlight && offsidePhase?.home === person.home
+              && !offsidePhase.candidates.includes(index);
+            const holdLine = attacking && !restart && !legalBreak;
             const support = supportPosition(person.spawn, ball.position, { length: LENGTH, width: WIDTH },
               { home: person.home, attacking, run: automaticRun || (person.home && elapsed < runUntil), lane: Math.sign(roleZ), role: person.role, forwardRole: TEAM_SIZE === 7 ? 5 : 7,
-                offsideLine: supportLines[Number(person.home)] });
+                offsideLine: holdLine ? supportLines[Number(person.home)] : undefined });
             const carryingAway = awayCarrier === index;
             const destination = person.home ? passDestination : awayPassDestination;
             const receiving = (person.home ? passTarget === index : awayPassTarget === index) && destination;
@@ -2206,8 +2213,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             else if (person.moving && distance < (closingCarrier ? .12 : .5)) person.moving = false;
             const receivingPace = (person.stamina > STAMINA.minimumToSprint ? 8.1 : 5.8)
               * (person.home ? teamAbility : difficulty.pace) * (1 - STAMINA.speedLoss * (1 - person.stamina));
-            const moveInput = receiving || closingCarrier ? receivingInput(delta, receivingPace)
+            let moveInput = receiving || closingCarrier || automaticRun ? receivingInput(delta, receivingPace)
               : person.moving ? { x: delta.x, z: delta.z } : { x: 0, z: 0 };
+            if (holdLine && !receiving && !carryingAway) moveInput = onsideRunInput(person.motion, moveInput,
+              receivingPace, supportLines[Number(person.home)], person.home);
             const speed = run(person, moveInput, dt,
               { sprint: receiving || chase || automaticRun || index === helper || restart?.type === 'corner' || (person.home && elapsed < runUntil), dribbling: carryingAway, ability: person.home ? teamAbility : difficulty.pace });
             person.mesh.position.set(person.motion.x, 0, person.motion.z);
@@ -2305,6 +2314,9 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const bootTouch = footTouch(ballControl, ball.position, ballVelocity, carrier.motion, feetOf(carrier), elapsed,
               { sprint: dribbler === controlled ? touchSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5, controlledSprint: dribbler === controlled && controlledSprint,
                 looseness: 0 });
+            // Each controlled boot touch is a new legal snapshot, including
+            // consecutive dribble touches by the same player.
+            if (bootTouch?.contact && ruleTouch(dribbler, { deliberate: true, kick: true })) return;
             const closeTouch = possessionTouch(ball.position, ballVelocity, carrier.motion);
             const touch = closeTouch ? { ...closeTouch, contact: bootTouch?.contact } : bootTouch;
             if (touch) {

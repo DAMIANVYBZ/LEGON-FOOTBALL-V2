@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOffsideTracker, offsidePositions, offsideInterference, goalCrossing } from '../src/rules.js';
+import { createOffsideTracker, offsidePositions, offsideInterference, onsideRunInput, goalCrossing } from '../src/rules.js';
 import { pitchExit } from '../src/gameplay.js';
 const passer={index:5,home:true,x:5,z:0};
 const receiver={index:6,home:true,x:20,z:0};
@@ -65,4 +65,32 @@ test('offside interference requires a challenge or an actual keeper screen',()=>
  assert.equal(offsideInterference(phase,{x:5,y:.11,z:0},[receiver,keeper]),null);
  assert.equal(offsideInterference(phase,{x:5,y:.11,z:0},[{...receiver,x:27},keeper],{shot:true}),6);
  assert.equal(offsideInterference(phase,{x:5,y:.11,z:0},[{...receiver,x:27,z:2},keeper],{shot:true}),null);
+});
+
+
+test('runners brake before the line in either direction and retreat if already beyond it', () => {
+  for (const home of [true, false]) {
+    const sign = home ? 1 : -1;
+    const far = onsideRunInput({ x: sign * 10 }, { x: sign, z: .2 }, 8, sign * 20, home);
+    const close = onsideRunInput({ x: sign * 19.4 }, { x: sign, z: .2 }, 8, sign * 20, home);
+    const beyond = onsideRunInput({ x: sign * 20.2 }, { x: sign, z: .2 }, 8, sign * 20, home);
+    assert.ok(far.x * sign > .9 && close.x * sign < .3);
+    assert.ok(beyond.x * sign < 0);
+    assert.equal(close.z, far.z, 'checking the line preserves the lateral run');
+  }
+});
+
+test('a player onside at release can run beyond the line without becoming offside', () => {
+  const t = createOffsideTracker();
+  const onside = { ...receiver, x: 14 };
+  t.touch(passer, ball, [passer, onside, ...defenders], { deliberate: true });
+  assert.equal(t.touch({ ...onside, x: 25 }, { ...ball, x: 25 }, players, { deliberate: true }), null);
+});
+
+test('successive touches by one dribbler refresh the offside snapshot', () => {
+  const t = createOffsideTracker();
+  t.touch(passer, ball, players, { deliberate: true });
+  assert.ok(t.involved(receiver));
+  t.touch(passer, ball, [passer, { ...receiver, x: 14 }, ...defenders], { deliberate: true });
+  assert.equal(t.involved(receiver), false);
 });

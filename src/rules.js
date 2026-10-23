@@ -60,3 +60,16 @@ export function goalCrossing(from, exit, goal, radius = 0.11) {
     && Math.abs(exit.point.z) + radius < goal.width / 2
     && exit.point.y + radius < goal.height);
 }
+
+// Slow the forward component before reaching the line; lateral runs can keep
+// moving. Target clamping alone lets a sprinting player coast into offside.
+export function onsideRunInput(player, input, pace, line, home) {
+  if (!Number.isFinite(line) || pace <= 0) return input;
+  const sign = home ? 1 : -1;
+  const remaining = sign * (line - player.x) - .45;
+  const length = Math.max(1, Math.hypot(input.x, input.z));
+  let forward = input.x / length * sign;
+  if (remaining < 0) forward = Math.min(forward, -Math.min(1, .3 + -remaining * .5));
+  else forward = Math.min(forward, Math.sqrt(2 * 8 * remaining) / pace);
+  return { x: forward * sign, z: input.z / length };
+}

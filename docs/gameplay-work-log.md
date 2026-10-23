@@ -703,3 +703,26 @@ maximum straight sprint ball gap was .48 m, seven-second sprint minimum speed
 tools/audit_close_possession.py; local results: playtest-artifacts/close-possession.
 These are isolated checks, not a claim of complete match realism or live hosting
 verification.
+
+
+## 2026-10-23 — offside snapshots and timed attacking runs
+
+Controlled boot touches now refresh the legal offside snapshot even when the
+same player dribbles repeatedly. The repeated-contact shortcut cannot suppress
+an infringement for an already flagged player. Second-last opponent, ball,
+halfway line, involvement, save/deflection retention and restart exemptions
+remain handled by the existing rules tracker.
+
+Automatic attackers use an arriving controller and reduce their forward input
+before the offside line rather than sprinting past a target only .35 m behind it.
+They retreat if caught beyond the line and preserve lateral movement. Players
+onside at delivery may break the line during the pass; players flagged at delivery
+do not gain that exemption. These are attempts to time runs, not offside immunity.
+
+Validation: 156 unit tests and production build pass. Full-roster browser checks
+on Sarbah (10v10) and Presec (7v7) each verify home and away offside involvement,
+legal through-ball receptions and waiting onside before delivery. Four illegal
+receptions produce four indirect free kicks; four legal receptions have no whistle.
+Waiting runners peaked at x=14.56 and 14.32 against an x=15 line. No JavaScript
+errors. Reproduce with tools/audit_offside_timing.py; local results are in
+playtest-artifacts/offside-timing/results.json. Live deployment not verified.
