@@ -15,7 +15,7 @@ import { loadAnimation, loadGLTF, loadPlayerModel, loadVenueManifest } from './a
 import { GOAL, KICK_SPIN, MAX_SIM_STEPS, SIM_DT, STAMINA, difficultyFor } from './physicsConfig.js';
 import { createRandom, keeperPosition, saveOutcome, shotOnGoal } from './keeper.js';
 import { bestPassOption, decideCarrier, markingAssignments } from './cpuBrain.js';
-import { createTeamAttributes, hashSeed, paceFactor, accelerationFactor, agilityFactor, finishingAccuracy, staminaFactor, handlingFactor, looseTouchChance, passError, tackleChance } from './attributes.js';
+import { createTeamAttributes, hashSeed, paceFactor, accelerationFactor, agilityFactor, finishingAccuracy, staminaFactor, handlingFactor, passError, tackleChance } from './attributes.js';
 import { createMatchAudio } from './audio.js';
 import { matchKits, teamShort } from './teams.js';
 import { createCommentary, resultLine, scoreLine, goalContext } from './commentary.js';
@@ -28,7 +28,7 @@ import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.j
 import { playerMaterial } from './playerMaterial.js';
 import { groundedSlideClip, transitionPlayerAction } from './playerAnimation.js';
 import { slideAim, slideVelocity, slideBallContact, slideDeflection, sweepContact, slideVerdict, slideApproachSpeed } from './sliding.js';
-import { createBallControl, footTouch, controlStrideLimit, controlStrideInput, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
+import { createBallControl, footTouch, possessionTouch, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
 import { plantControlFoot, placeSlideFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
 import { receivingPath, receivingPoint, assistedReceivingInput, RECEIVING_ASSIST } from './receiving.js';
@@ -398,13 +398,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // Outfield movement with stamina: sprinting drains it, a tired player is slower.
     function run(person, input, dt, options) {
       const sprint = options.sprint && person.stamina > STAMINA.minimumToSprint;
-      const carrying = options.dribbling && !restart && keeperHolding < 0;
-      const strideInput = carrying ? controlStrideInput(person.motion, input, ball.position) : input;
-      const speedLimit = carrying ? controlStrideLimit(person.motion, strideInput, ball.position, ballVelocity, { sprint, controlledSprint: options.controlledSprint }) : Infinity;
+      // Close possession follows the requested stride. Do not brake the runner
+      // merely because the previous ball touch lagged behind the animated boot.
+      const strideInput = input;
       // The team-wide ability multiplier (win progression, CPU difficulty) now moves speed
       // only a little; individual pace, acceleration and agility come from the player's attributes.
       const teamSpeed = 1 + ((options.ability ?? 1) - 1) * 0.3;
-      const speed = advancePlayer(person.motion, strideInput, dt, { ...options, sprint, speedLimit,
+      const speed = advancePlayer(person.motion, strideInput, dt, { ...options, sprint,
         ability: teamSpeed * paceFactor(person.attrs) * (1 - STAMINA.speedLoss * (1 - person.stamina)),
         accelFactor: accelerationFactor(person.attrs), agilityFactor: agilityFactor(person.attrs) });
       const fitness = staminaFactor(person.attrs);
@@ -2302,9 +2302,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           if (!restart && keeperHolding < 0 && dribbler >= 0) {
             if (dribbler !== carryOwner) ballControl = createBallControl(elapsed);
             const carrier = people[dribbler];
-            const touch = footTouch(ballControl, ball.position, ballVelocity, carrier.motion, feetOf(carrier), elapsed,
+            const bootTouch = footTouch(ballControl, ball.position, ballVelocity, carrier.motion, feetOf(carrier), elapsed,
               { sprint: dribbler === controlled ? touchSprint && carrier.stamina > STAMINA.minimumToSprint : Math.hypot(carrier.motion.vx, carrier.motion.vz) > 5.5, controlledSprint: dribbler === controlled && controlledSprint,
-                looseness: looseTouchChance(carrier.attrs), random });
+                looseness: 0 });
+            const closeTouch = possessionTouch(ball.position, ballVelocity, carrier.motion);
+            const touch = closeTouch ? { ...closeTouch, contact: bootTouch?.contact } : bootTouch;
             if (touch) {
               ballVelocity.set(touch.velocity.x, touch.velocity.y, touch.velocity.z);
               if (touch.spin) physics?.setSpin(touch.spin);

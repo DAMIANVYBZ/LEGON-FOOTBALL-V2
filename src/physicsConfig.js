@@ -79,5 +79,5 @@ export const DIFFICULTY = {
 // Stamina, from 1 (fresh) to 0: sprinting drains it, jogging and standing
 // restore it. A tired player's top speed drops by up to 18%. The stamina
 // attribute scales drain and recovery.
-export const STAMINA = { sprintDrain: 0.07, jogRecover: 0.025, restRecover: 0.06, minimumToSprint: 0.06, speedLoss: 0.18 };
+export const STAMINA = { sprintDrain: 0.035, jogRecover: 0.025, restRecover: 0.06, minimumToSprint: 0.06, speedLoss: 0.18 };
 export const difficultyFor = name => DIFFICULTY[name] || DIFFICULTY.Medium;

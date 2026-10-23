@@ -683,3 +683,23 @@ with opposing/idle/lateral input; foul delay/resume and straight-shot launch che
 in Chromium with no JavaScript errors. Production build and Cloudflare asset
 packaging dry-run pass. Local artifacts: playtest-artifacts/gameplay-receiving-shooting.
 Live Cloudflare deployment is not verified from this environment.
+
+
+## 2026-10-23 — close possession and uninterrupted attacking sprint
+
+Owned ground balls now follow the carrier's stride with velocity-based close
+control (34 cm forward, 10 cm to the side). Rapier still integrates position and
+opponent collisions still release ownership. Passes and shots clear ownership
+before this assistance runs. Removed random heavy touches from owned dribbles,
+and removed ball-lag steering/speed caps from the runner. Sprint drain is .035/s
+instead of .07/s so a long attack does not exhaust the runner near goal; normal
+fatigue and player attributes still affect speed.
+
+Validation: 153 unit tests and production build/Cloudflare dry-run pass. Chromium
+fixtures reached identical 8.00 m/s sprint speed from midfield and near goal;
+maximum straight sprint ball gap was .48 m, seven-second sprint minimum speed
+7.76 m/s, and stopped gap after turning/braking .36 m. A released pass retained
+11.68 m/s with no owner. No JavaScript errors. Replay script:
+tools/audit_close_possession.py; local results: playtest-artifacts/close-possession.
+These are isolated checks, not a claim of complete match realism or live hosting
+verification.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBallControl, footTouch, controlStrideLimit, controlStrideInput, needsControlTrap, withinKickReach } from '../src/ballControl.js';
+import { createBallControl, footTouch, possessionTouch, controlStrideLimit, controlStrideInput, needsControlTrap, withinKickReach } from '../src/ballControl.js';
 
 import { advancePlayer } from '../src/gameplay.js';
 
@@ -106,4 +106,24 @@ test('a wide controlled touch gets a small lateral recovery step without reversi
   assert.equal(controlStrideInput(player, input, { ...wide, z: .1 }), input);
   assert.equal(controlStrideInput(player, input, { ...wide, y: 1 }), input);
   assert.equal(controlStrideInput(player, input, { ...wide, z: 2 }), input);
+});
+
+
+test('owned ground ball stays at the stride through sprints, turns and stops', () => {
+  for (const hz of [30, 60, 120]) {
+    const p = { x: 0, z: 0, vx: 0, vz: 0, heading: 0 };
+    const b = { x: .34, y: .11, z: .1 };
+    let v = { x: 0, y: 0, z: 0 }, maxGap = 0;
+    for (let frame = 0; frame < hz * 12; frame++) {
+      const t = frame / hz;
+      const input = t < 5 ? { x: 1, z: 0 } : t < 8 ? { x: 0, z: 1 } : { x: 0, z: 0 };
+      advancePlayer(p, input, 1 / hz, { sprint: true, dribbling: true });
+      v = possessionTouch(b, v, p).velocity;
+      b.x += v.x / hz; b.z += v.z / hz;
+      maxGap = Math.max(maxGap, Math.hypot(b.x - p.x, b.z - p.z));
+    }
+    assert.ok(maxGap < .7, `hz=${hz}, gap=${maxGap}`);
+    assert.ok(Math.hypot(v.x, v.z) < .01);
+  }
+  assert.equal(possessionTouch({ x: 0, y: 2, z: 0 }, { x: 0, y: 0, z: 0 }, player), null);
 });

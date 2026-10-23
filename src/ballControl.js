@@ -123,3 +123,19 @@ export function footTouch(state, ball, velocity, player, feet, time, { sprint = 
 export function withinKickReach(player, ball) {
   return Math.hypot(player.x - ball.x, player.z - ball.z) <= 1.25 && ball.y <= 0.55;
 }
+
+// Possession assistance follows the carrier's stride through velocity, never
+// position. Physical opposition contact clears ownership in the match loop,
+// so this cannot retrieve a tackled ball or affect a released pass/shot.
+export function possessionTouch(ball, velocity, player) {
+  if (ball.y > BALL.radius + .15 || velocity.y > 1) return null;
+  const speed = Math.hypot(player.vx, player.vz);
+  const fx = speed > .3 ? player.vx / speed : Math.cos(player.heading);
+  const fz = speed > .3 ? player.vz / speed : Math.sin(player.heading);
+  const ahead = .34, side = .1;
+  const dx = player.x + fx * ahead - fz * side - ball.x;
+  const dz = player.z + fz * ahead + fx * side - ball.z;
+  const correction = Math.hypot(dx, dz), gain = correction > 0 ? Math.min(12, 8 / correction) : 0;
+  return { velocity: { x: player.vx + dx * gain, y: Math.min(0, velocity.y), z: player.vz + dz * gain },
+    spin: { x: (player.vz + dz * gain) / BALL.radius, y: 0, z: -(player.vx + dx * gain) / BALL.radius } };
+}
