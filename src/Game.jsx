@@ -93,6 +93,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const GOAL_WIDTH = venue.kind === 'astro' ? 5.5 : 7.32;
   const GOAL_HEIGHT = venue.kind === 'astro' ? 2.2 : 2.44;
   const isTouch = config.inputMode === 'touch';
+  const isPhone = config.device === 'phone';
   const passingAssistance = passingMode(preferences.passingAssistance);
   const mount = useRef(null);
   const engine = useRef(null);
@@ -2778,11 +2779,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     : { cross: 'A', circle: 'B', square: 'X', triangle: 'Y', l1: 'LB', r1: 'RB', l2: 'LT', r2: 'RT' };
   const keeperHint = isTouch ? '' : `KEEPER'S BALL · AIM: ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} · THROW: ${keyLabel(preferences.keyboard.pass)} (HOLD = LONGER) · LONG KICK: ${keyLabel(preferences.keyboard.through)} · PUT DOWN: ${keyLabel(preferences.keyboard.lob)}`;
   const keyboardHint = `MOVE: ${preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} · PASS: ${keyLabel(preferences.keyboard.pass)} · SHOOT: ${keyLabel(preferences.keyboard.shoot)} · SWITCH: ${keyLabel(preferences.keyboard.switch)} · SPRINT: ${keyLabel(preferences.keyboard.sprint)} · PAUSE: ESC`;
-  return <div className={`game-shell ${isTouch ? 'touch-mode' : 'keyboard-mode'}${goalMoment ? ' goal-presentation' : ''}`}>
+  return <div className={`game-shell ${isTouch ? 'touch-mode' : 'keyboard-mode'}${goalMoment ? ' goal-presentation' : ''}${isPhone ? ' phone-hud' : ''}`}>
     <div className="game-view" ref={mount}/>
     <div className="game-hud">
-      {preferences.hud.player && <div className="player-indicator">CONTROLLED PLAYER #{selectedPlayer}<small>{venue.shortName} · {isTouch ? 'Drag joystick · landscape' : gamepadStatus || `${preferences.keyboardPreset === 'classic' ? 'Arrows' : 'WASD'} · gamepad ready`}</small></div>}
-      {preferences.hud.score && <div className="scoreboard"><span style={{ background: kits.home, color: textOn(kits.home) }}>{homeName}</span><b>{score[0]}</b><div>{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}<small>{half === 1 ? '1ST' : '2ND'} HALF</small></div><b>{score[1]}</b><span style={{ background: kits.away, color: textOn(kits.away) }}>{awayName}</span></div>}
+      {!isPhone && preferences.hud.player && <div className="player-indicator">CONTROLLED PLAYER #{selectedPlayer}<small>{venue.shortName} · {isTouch ? 'Drag joystick · landscape' : gamepadStatus || `${preferences.keyboardPreset === 'classic' ? 'Arrows' : 'WASD'} · gamepad ready`}</small></div>}
+      {preferences.hud.score && <div className="scoreboard"><span title={homeName} style={isPhone ? undefined : { background: kits.home, color: textOn(kits.home) }}>{isPhone ? homeName.slice(0, 3) : homeName}</span><b>{score[0]}</b><div>{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}<small>{half === 1 ? '1ST' : '2ND'} HALF</small></div><b>{score[1]}</b><span title={awayName} style={isPhone ? undefined : { background: kits.away, color: textOn(kits.away) }}>{isPhone ? awayName.slice(0, 3) : awayName}</span></div>}
       {preferences.hud.messages && message && <div className="game-message">{message}</div>}
       {preferences.hud.messages && modelStatus && <div className="model-status">{modelStatus}</div>}
       {preferences.hud.radar && <div className="radar" ref={radar}><div className="radar-mid"/>{Array.from({ length: TEAM_SIZE * 2 }, (_, index) => <i key={index} className={`dot ${index < TEAM_SIZE ? 'home' : 'away'}`}/>)}<i className="dot ball"/></div>}
@@ -2800,7 +2801,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       {isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · PUT DOWN: RELEASE TO FEET</div>}
       {isTouch && padPhase === 'throwIn' && <div className="controls-hint keeper-touch">THROW IN · JOYSTICK: AIM · HOLD PASS FOR POWER · RELEASE TO THROW</div>}
       <div className="power-meter" ref={powerMeter}><i/><span>POWER</span></div>
-      {caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}
+      {!isPhone && caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}
       {preferences.hud.player && <div className="stamina-meter" ref={staminaMeter}><i/></div>}
     </div>
     {goalMoment && !paused && <div className="goal-sequence" role="region" aria-label={goalMoment.phase === 'replay' ? 'Goal replay' : 'Goal celebration'}>

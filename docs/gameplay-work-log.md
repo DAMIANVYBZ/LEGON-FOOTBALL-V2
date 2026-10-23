@@ -726,3 +726,17 @@ receptions produce four indirect free kicks; four legal receptions have no whist
 Waiting runners peaked at x=14.56 and 14.32 against an x=15 line. No JavaScript
 errors. Reproduce with tools/audit_offside_timing.py; local results are in
 playtest-artifacts/offside-timing/results.json. Live deployment not verified.
+
+
+## 2026-10-23 — smaller phone HUD
+
+Phone layouts no longer render commentary captions or the controlled-player label.
+The phone scoreboard uses three-letter team labels and a 166×30 px clear-glass
+strip at the top-left, respecting safe-area insets. Scores and match time remain
+visible; opaque team-colour blocks are removed on phones. Commentary audio remains
+controlled by the existing sound preferences. Desktop HUD is unchanged.
+
+Validation: emulated 844×390 phone screenshot and DOM/layout checks confirm both
+removed elements are absent, scoreboard starts at (6,6), backdrop blur is active,
+and element opacity remains 1. No JavaScript errors. Production build and
+Cloudflare asset dry-run pass. Local screenshot: playtest-artifacts/phone-hud/phone-hud.png.
