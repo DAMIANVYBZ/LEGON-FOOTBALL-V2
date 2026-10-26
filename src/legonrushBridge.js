@@ -19,3 +19,10 @@ export function reportMatchResult(result) {
   } catch (error) { console.warn('LEGONRUSH bridge (event) failed', error); }
   return payload;
 }
+
+// True when the match runs inside LEGONRUSH (Unreal binds window.ue.legonrush, possibly after load; or ?legonrush=1): the host game keeps its own
+// screen clean, so the commentary captions and on-screen control hints are hidden there.
+export function embeddedInLegonrush() {
+  try { return new URLSearchParams(globalThis.location?.search || '').has('legonrush') || !!(globalThis.ue && globalThis.ue.legonrush); }
+  catch { return false; }
+}

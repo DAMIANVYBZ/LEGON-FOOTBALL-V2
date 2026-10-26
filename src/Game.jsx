@@ -28,7 +28,7 @@ import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.j
 import { playerMaterial } from './playerMaterial.js';
 import { groundedSlideClip, transitionPlayerAction } from './playerAnimation.js';
 import { slideAim, slideVelocity, slideBallContact, slideDeflection, sweepContact, slideVerdict, slideApproachSpeed } from './sliding.js';
-import { reportMatchResult } from './legonrushBridge.js';
+import { reportMatchResult, embeddedInLegonrush } from './legonrushBridge.js';
 import { createBallControl, footTouch, possessionTouch, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
 import { plantControlFoot, placeSlideFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
@@ -2792,13 +2792,13 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   return <div className={`game-shell ${isTouch ? 'touch-mode' : 'keyboard-mode'}${goalMoment ? ' goal-presentation' : ''}${isPhone ? ' phone-hud' : ''}`}>
     <div className="game-view" ref={mount}/>
     <div className="game-hud">
-      {!isPhone && preferences.hud.player && <div className="player-indicator">CONTROLLED PLAYER #{selectedPlayer}<small>{venue.shortName} · {isTouch ? 'Drag joystick · landscape' : gamepadStatus || `${preferences.keyboardPreset === 'classic' ? 'Arrows' : 'WASD'} · gamepad ready`}</small></div>}
+      {!isPhone && preferences.hud.player && <div className="player-indicator">CONTROLLED PLAYER #{selectedPlayer}{!embeddedInLegonrush() && <small>{venue.shortName} · {isTouch ? 'Drag joystick · landscape' : gamepadStatus || `${preferences.keyboardPreset === 'classic' ? 'Arrows' : 'WASD'} · gamepad ready`}</small>}</div>}
       {preferences.hud.score && <div className="scoreboard"><span title={homeName} style={isPhone ? undefined : { background: kits.home, color: textOn(kits.home) }}>{isPhone ? homeName.slice(0, 3) : homeName}</span><b>{score[0]}</b><div>{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}<small>{half === 1 ? '1ST' : '2ND'} HALF</small></div><b>{score[1]}</b><span title={awayName} style={isPhone ? undefined : { background: kits.away, color: textOn(kits.away) }}>{isPhone ? awayName.slice(0, 3) : awayName}</span></div>}
       {preferences.hud.messages && message && <div className="game-message">{message}</div>}
       {preferences.hud.messages && modelStatus && <div className="model-status">{modelStatus}</div>}
       {preferences.hud.radar && <div className="radar" ref={radar}><div className="radar-mid"/>{Array.from({ length: TEAM_SIZE * 2 }, (_, index) => <i key={index} className={`dot ${index < TEAM_SIZE ? 'home' : 'away'}`}/>)}<i className="dot ball"/></div>}
       {preferences.hud.score && <div className="hud-bottom"><span>{homeName} <i/></span><span>{awayName} <i/></span></div>}
-      {!isTouch && preferences.hud.hints && <div className="controls-hint">{keeperBall ? (gamepadStatus ? `KEEPER'S BALL · AIM: L · THROW: ${pad.cross} (HOLD = LONGER) · LONG KICK: ${pad.triangle} · PUT DOWN: ${pad.circle}` : keeperHint)
+      {!embeddedInLegonrush() && !isTouch && preferences.hud.hints && <div className="controls-hint">{keeperBall ? (gamepadStatus ? `KEEPER'S BALL · AIM: L · THROW: ${pad.cross} (HOLD = LONGER) · LONG KICK: ${pad.triangle} · PUT DOWN: ${pad.circle}` : keeperHint)
         : padPhase === 'penaltyKeeper' ? `PENALTY AGAINST YOU · HOLD ${gamepadStatus ? 'L' : preferences.keyboardPreset === 'classic' ? '← OR →' : 'A OR D'} LEFT OR RIGHT TO DIVE AT THE KICK · LET GO TO STAY CENTRAL`
         : padPhase === 'throwIn' ? `THROW IN · ${gamepadStatus ? 'L' : preferences.keyboardPreset === 'classic' ? 'ARROWS' : 'WASD'} AIM · HOLD ${gamepadStatus ? pad.cross : keyLabel(preferences.keyboard.pass)} FOR POWER · RELEASE TO THROW`
         : padPhase === 'setPiece' ? (gamepadStatus
@@ -2808,10 +2808,10 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           ? `${pad.cross} PASS · ${pad.triangle} THROUGH · ${pad.square} SHOOT · ${pad.circle} LOB · ${pad.r1} SPRINT · ${pad.l2} SHIELD · ${pad.r2}+${pad.square} FINESSE · ${pad.l1}+${pad.square} CHIP`
           : `${pad.square} TACKLE · ${pad.circle} SLIDE · ${pad.r1}+${pad.square} HARD TACKLE · ${pad.cross} CONTAIN · ${pad.l1} SWITCH · ${pad.l2} JOCKEY · ${pad.triangle} KEEPER RUSH`)
         : keyboardHint}</div>}
-      {isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · PUT DOWN: RELEASE TO FEET</div>}
-      {isTouch && padPhase === 'throwIn' && <div className="controls-hint keeper-touch">THROW IN · JOYSTICK: AIM · HOLD PASS FOR POWER · RELEASE TO THROW</div>}
+      {!embeddedInLegonrush() && isTouch && keeperBall && <div className="controls-hint keeper-touch">KEEPER'S BALL · PASS: THROW (HOLD = LONGER) · SHOOT: LONG KICK · PUT DOWN: RELEASE TO FEET</div>}
+      {!embeddedInLegonrush() && isTouch && padPhase === 'throwIn' && <div className="controls-hint keeper-touch">THROW IN · JOYSTICK: AIM · HOLD PASS FOR POWER · RELEASE TO THROW</div>}
       <div className="power-meter" ref={powerMeter}><i/><span>POWER</span></div>
-      {!isPhone && caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}
+      {!embeddedInLegonrush() && !isPhone && caption && <div className="commentary-caption" aria-live="polite">{caption}</div>}
       {preferences.hud.player && <div className="stamina-meter" ref={staminaMeter}><i/></div>}
     </div>
     {goalMoment && !paused && <div className="goal-sequence" role="region" aria-label={goalMoment.phase === 'replay' ? 'Goal replay' : 'Goal celebration'}>
