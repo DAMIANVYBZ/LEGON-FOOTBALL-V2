@@ -1,5 +1,7 @@
-// Match commentary spoken by the device's own voice (Web Speech API): no audio
-// files to download, a few kilobytes of code, almost no processing.
+// Match commentary. Natural neural-voice clips (public/commentary, rendered by
+// tools/render_commentary.py) are played sentence by sentence when present; any line
+// without clips is spoken by the device's own voice (Web Speech API) instead.
+import { publicAsset } from './publicAsset.js';
 
 // Priority: 3 interrupts anything (goals, full time), 2 waits briefly for the
 // current line, 1 is dropped when the commentator is already talking.
@@ -126,6 +128,13 @@ export function pickLine(event, values, random = Math.random, last = {}) {
   return { text: text.replace(/\s+/g, ' ').trim(), priority: spec.priority, excited: Boolean(spec.excited) };
 }
 
+// Sentences as the voice clips are cut: split after . ! ? (shared with tools/commentary_sentences.mjs).
+export function splitSentences(text) {
+  return text.replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/).filter(Boolean);
+}
+
+export { EVENTS, GOAL_MOMENTS };
+
 const COOLDOWN = { shot: 1200, save: 1500, catch: 3000, punch: 1800, spill: 2000,
   woodwork: 1200, inBox: 4500, through: 4000, cross: 3000, tackle: 6000, build: 14000 };
 
@@ -137,12 +146,51 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
   const chooseVoice = () => { voice = chooseCommentaryVoice(synth?.getVoices?.() || [], phoneVoice()); };
   chooseVoice(); synth?.addEventListener?.('voiceschanged', chooseVoice);
 
+  // Voice clips: one manifest, loaded once; a missing manifest simply keeps the device voice.
+  let clips = null;
+  const audio = typeof Audio === 'function' ? new Audio() : null;
+  if (audio && typeof fetch === 'function') {
+    fetch(publicAsset('commentary/manifest.json')).then(r => (r.ok ? r.json() : null)).then(m => { clips = m; }).catch(() => {});
+  }
+  // Clip files for a line, in its delivery style (the other style if one sentence only exists there).
+  const clipsFor = line => {
+    if (!clips) return null;
+    const style = line.excited ? 'excited' : 'calm', other = line.excited ? 'calm' : 'excited';
+    const files = splitSentences(line.text).map(sentence => clips[style]?.[sentence] || clips[other]?.[sentence]);
+    return files.length && files.every(Boolean) ? files.map(file => publicAsset('commentary/' + file)) : null;
+  };
+
   function cancelSpeech() {
     generation++; clearTimeout(guard); guard = null; speakingPriority = 0; current = null;
     synth?.cancel();
+    if (audio) { audio.onended = audio.onerror = null; audio.pause(); }
+  }
+  // Play a line's clips back to back; the same queueing rules as the spoken voice.
+  function playClips(line, files) {
+    const id = ++generation;
+    speakingPriority = line.priority; current = { line, started: true };
+    let index = 0, finished = false;
+    const done = () => {
+      if (finished || id !== generation) return;
+      finished = true; clearTimeout(guard); guard = null; speakingPriority = 0; current = null;
+      const next = pending; pending = null;
+      if (on && next && now() - next.at < 1800) speak(next.line);
+    };
+    const next = () => {
+      if (id !== generation) return;
+      if (index >= files.length) { done(); return; }
+      audio.src = files[index++];
+      audio.play().catch(() => { if (id === generation) { clips = null; done(); } });
+    };
+    audio.onended = next;
+    audio.onerror = next;
+    guard = setTimeout(done, 2500 + line.text.length * 90);
+    next();
   }
   function speak(line) {
     onCaption(line.text);
+    const files = clipsFor(line);
+    if (files) { playClips(line, files); return; }
     if (!synth || !Utterance) return;
     const utterance = new Utterance(line.text), id = ++generation;
     if (voice) utterance.voice = voice;

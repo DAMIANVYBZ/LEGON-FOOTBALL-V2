@@ -1346,6 +1346,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       }
     }
     function keyboardAction(key) {
+      // Inside LEGONRUSH, Shift sprints as it does on campus; the teammate press moves to R.
+      if (embeddedInLegonrush()) {
+        if (key === 'shift') return 'shift';
+        if (key === 'r') return 't';
+      }
       if (key === keyboard.sprint) return 'shift';
       if (key === keyboard.switch) return 'q';
       if (key === keyboard.finesse) return 'f';
