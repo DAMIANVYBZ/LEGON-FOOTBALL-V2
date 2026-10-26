@@ -136,3 +136,37 @@ export function markingAssignments(defenders, attackers, ownGoalX) {
   }
   return result;
 }
+
+// Zonal marking. Each defender owns the area around its zone spot (its formation
+// position shifted with the ball) and only marks an attacker who comes into that
+// area, goal-side of him. Forwards (the top line) never drop in to mark, and a
+// defender with no one in his zone holds his spot, so the team keeps its lines.
+// defenders: [{ index, x, z, zone: {x, z}, line }], line 0 = back line.
+export function zonalMarking(defenders, attackers, ownGoalX, { radius = 11, topLine = 2 } = {}) {
+  const order = [...attackers].sort((a, b) => Math.abs(a.x - ownGoalX) - Math.abs(b.x - ownGoalX));
+  const free = new Set(defenders.filter(d => d.line < topLine).map(d => d.index));
+  const result = new Map();
+  for (const attacker of order) {
+    let best = null, bestGap = Infinity;
+    for (const defender of defenders) {
+      if (!free.has(defender.index)) continue;
+      const gap = distance(defender.zone, attacker);
+      if (gap < bestGap && gap <= radius) { best = defender; bestGap = gap; }
+    }
+    if (!best) continue;
+    free.delete(best.index);
+    const toGoalX = ownGoalX - attacker.x, toGoalZ = -attacker.z, size = Math.hypot(toGoalX, toGoalZ) || 1;
+    result.set(best.index, { x: attacker.x + toGoalX / size * 1.8, z: attacker.z + toGoalZ / size * 1.8, attacker: attacker.index });
+  }
+  return result;
+}
+
+// Which formation line a player belongs to: 0 = defence, then midfield, then attack.
+export function formationLine(role, rows) {
+  let upTo = 0;
+  for (let line = 0; line < rows.length; line++) {
+    upTo += rows[line];
+    if (role <= upTo) return line;
+  }
+  return rows.length - 1;
+}

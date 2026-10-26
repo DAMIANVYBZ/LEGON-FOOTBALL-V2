@@ -102,7 +102,7 @@ export function canReceivePass(player, ball, velocity) {
     && ball.y < 0.85 && Math.hypot(velocity.x, velocity.y, velocity.z) < 24;
 }
 
-export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0, forwardRole = 5, offsideLine } = {}) {
+export function supportPosition(spawn, ball, field, { home, attacking, run = false, lane = 0, role = 0, forwardRole = 5, offsideLine, line = -1 } = {}) {
   const attackSign = home ? 1 : -1;
   const forward = attacking ? (run ? 11 : 5) : -3;
   const crossing = attacking && Math.abs(ball.z) > field.width * 0.27 && attackSign * ball.x > field.length * 0.08;
@@ -114,10 +114,24 @@ export function supportPosition(spawn, ball, field, { home, attacking, run = fal
       ? ball.x + attackSign * (attackingRole ? 13 : 7)
       : spawn[0] + ball.x * (attacking ? 0.48 : 0.3) + attackSign * forward,
       -field.length / 2 + 2.5, field.length / 2 - 2.5),
-    z: clamp(crossing && attackingRole ? boxRunZ : spawn[1] + ball.z * (attacking ? 0.2 : 0.14) + lane * (attacking ? 2 : 1),
+    // Out of possession the whole block slides across towards the ball's side.
+    z: clamp(crossing && attackingRole ? boxRunZ : spawn[1] + ball.z * (attacking ? 0.2 : 0.38) + lane * (attacking ? 2 : 1),
       -field.width / 2 + 2, field.width / 2 - 2),
   };
-  if (attacking && Number.isFinite(offsideLine)) target.x = attackSign * Math.min(target.x * attackSign, offsideLine * attackSign - 0.35);
+  if (!attacking && line >= 0) {
+    // Defending lines stay goal-side of the ball: the back line well behind it, the midfield
+    // screening just behind it; forwards may stay level to press the next pass. Near our own
+    // goal the lines compress but keep at least 5 m between them instead of merging.
+    const behind = line === 0 ? 9 : line === 1 ? 5 : -1;
+    const floor = -field.length / 2 + 3 + line * 5;                 // depth, in our attacking direction
+    const depth = Math.max(floor, Math.min(target.x * attackSign, ball.x * attackSign - behind));
+    target.x = clamp(attackSign * depth, -field.length / 2 + 2.5, field.length / 2 - 2.5);
+  }
+  if (attacking && Number.isFinite(offsideLine)) {
+    // Strikers hold the last line; supporting midfield runs arrive a few metres behind them.
+    const margin = attackingRole || crossing ? 0.35 : 4;
+    target.x = attackSign * Math.min(target.x * attackSign, offsideLine * attackSign - margin);
+  }
   return target;
 }
 

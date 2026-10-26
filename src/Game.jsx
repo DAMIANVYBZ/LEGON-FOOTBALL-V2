@@ -4,9 +4,9 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import TouchControls from './TouchControls.jsx';
 import { touchActions } from './touchActions.js';
 import { getVenue } from './venues.js';
-import { teamSizeForVenue, fieldPositions, kickoffRoles } from './roster.js';
+import { teamSizeForVenue, fieldPositions, kickoffRoles, resolveFormation } from './roster.js';
 import { buildVenueScene } from './VenueScene.js';
-import { createStadiumGrassMaterial, textureStadiumGrass } from './stadiumGrass.js';
+import { createGrassMaterial, textureStadiumGrass } from './stadiumGrass.js';
 import { RUN_PACE } from './movementConfig.js';
 import { activeGamepad, readGamepad } from './gamepad.js';
 import { keyLabel } from './preferences.js';
@@ -14,7 +14,7 @@ import { abilityForWins, readTeamProgress, recordTeamWin } from './progression.j
 import { loadAnimation, loadGLTF, loadPlayerModel, loadVenueManifest } from './assets.js';
 import { GOAL, KICK_SPIN, MAX_SIM_STEPS, SIM_DT, STAMINA, difficultyFor } from './physicsConfig.js';
 import { createRandom, keeperPosition, saveOutcome, shotOnGoal } from './keeper.js';
-import { bestPassOption, decideCarrier, markingAssignments } from './cpuBrain.js';
+import { bestPassOption, decideCarrier, zonalMarking, formationLine } from './cpuBrain.js';
 import { createTeamAttributes, hashSeed, paceFactor, accelerationFactor, agilityFactor, finishingAccuracy, staminaFactor, handlingFactor, passError, tackleChance } from './attributes.js';
 import { createMatchAudio } from './audio.js';
 import { matchKits, teamShort } from './teams.js';
@@ -91,6 +91,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
   const venue = getVenue(config.venueId);
   const LENGTH = venue.length, WIDTH = venue.width;
   const TEAM_SIZE = teamSizeForVenue(venue), kickoffOrder = kickoffRoles(TEAM_SIZE), FIRST_FORWARD = kickoffOrder[0];
+  // Formation lines (defence, midfield, attack) for zonal defending and line-keeping.
+  const FORMATION_ROWS = resolveFormation(config.formation, TEAM_SIZE).split('–').map(Number), TOP_LINE = FORMATION_ROWS.length - 1;
   const GOAL_WIDTH = venue.kind === 'astro' ? 5.5 : 7.32;
   const GOAL_HEIGHT = venue.kind === 'astro' ? 2.2 : 2.44;
   const isTouch = config.inputMode === 'touch';
@@ -164,7 +166,8 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const fieldGroup = new THREE.Group();
     scene.add(fieldGroup);
     const venueBox = (w, h, d, color, x, y, z, parent = fallbackEnvironment) => box(w, h, d, color, x, y, z, parent);
-    const stadiumGrass = venue.id === 'ug-stadium' ? createStadiumGrassMaterial(Math.min(8, renderer.capabilities.getMaxAnisotropy())) : null;
+    // Every venue gets realistic ground for its real surface (half-size texture on phones).
+    const stadiumGrass = createGrassMaterial(Math.min(8, renderer.capabilities.getMaxAnisotropy()), venue.surface, venue.length, isPhone ? 1024 : 2048);
     let disposeStadiumGrass = () => {};
     buildVenueScene({ scene: fallbackEnvironment, venue, box: venueBox, material, stadiumGrass });
     // Scenery receives shadows but does not cast them: players, ball and goals
@@ -2109,10 +2112,16 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
           const carrierAway = awayCarrier >= 0 ? people[awayCarrier] : null;
           const helper = carrierAway && Math.hypot(active.motion.x - carrierAway.motion.x, active.motion.z - carrierAway.motion.z) > 4
             ? nearestOf(true, carrierAway.motion.x, carrierAway.motion.z, controlled) : -1;
+          // A defender's zone: his formation spot, shifted with the ball as a defending block.
+          const zoneOf = (p, home) => {
+            const person = people[p.index], line = formationLine(person.role, FORMATION_ROWS);
+            return { ...p, line, zone: supportPosition(person.spawn, ball.position, { length: LENGTH, width: WIDTH },
+              { home, attacking: false, lane: Math.sign(person.spawn[1]), role: person.role, forwardRole: TEAM_SIZE === 7 ? 5 : 7, line }) };
+          };
           if (defending && elapsed >= markingAt) {
             markingAt = elapsed + 0.5;
-            marking = markingAssignments(team(true).filter(p => p.index !== controlled && p.index !== helper),
-              team(false).filter(p => p.index !== awayCarrier), ownGoalX(true));
+            marking = zonalMarking(team(true).filter(p => p.index !== controlled && p.index !== helper).map(p => zoneOf(p, true)),
+              team(false).filter(p => p.index !== awayCarrier), ownGoalX(true), { topLine: TOP_LINE });
           }
           // The CPU defends too: while your side has the ball, every CPU player who is not
           // closing the ball down takes a nearby attacker goal-side, instead of drifting about.
@@ -2122,7 +2131,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const pressing = new Set(pressingAway);
             const threats = team(true).filter(a => a.index !== possessor
               && (Math.abs(a.x - ownGoalX(false)) < LENGTH * 0.62 || Math.hypot(a.x - ball.position.x, a.z - ball.position.z) < 24));
-            markingCpu = markingAssignments(team(false).filter(p => !pressing.has(p.index)), threats, ownGoalX(false));
+            markingCpu = zonalMarking(team(false).filter(p => !pressing.has(p.index)).map(p => zoneOf(p, false)), threats, ownGoalX(false), { topLine: TOP_LINE });
           } else if (!cpuDefending) markingCpu.clear();
           const shortReceiver = restart && restart.type !== 'penalty'
             && !(restart.type === 'corner' && restart.home && setPiece?.button !== 'j')
@@ -2165,6 +2174,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
             const holdLine = attacking && !restart && !legalBreak;
             const support = supportPosition(person.spawn, ball.position, { length: LENGTH, width: WIDTH },
               { home: person.home, attacking, run: automaticRun || (person.home && elapsed < runUntil), lane: Math.sign(roleZ), role: person.role, forwardRole: TEAM_SIZE === 7 ? 5 : 7,
+                line: formationLine(person.role, FORMATION_ROWS),
                 offsideLine: holdLine ? supportLines[Number(person.home)] : undefined });
             const carryingAway = awayCarrier === index;
             const destination = person.home ? passDestination : awayPassDestination;
