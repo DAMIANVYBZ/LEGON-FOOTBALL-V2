@@ -28,6 +28,7 @@ import { assessChallenge, defensiveApproach, SLIDE_TIMING } from './challenges.j
 import { playerMaterial } from './playerMaterial.js';
 import { groundedSlideClip, transitionPlayerAction } from './playerAnimation.js';
 import { slideAim, slideVelocity, slideBallContact, slideDeflection, sweepContact, slideVerdict, slideApproachSpeed } from './sliding.js';
+import { reportMatchResult } from './legonrushBridge.js';
 import { createBallControl, footTouch, possessionTouch, needsControlTrap, needsStrideTouch, INPUT_BUFFER_SECONDS, withinKickReach } from './ballControl.js';
 import { plantControlFoot, placeSlideFoot } from './footPlant.js';
 import { restartFraming, gameplayFraming } from './camera.js';
@@ -446,6 +447,15 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       endOfHalf(final) {
         const score = scoreLine(hallName(true), hallName(false), goals), result = resultLine(hallName(true), hallName(false), goals);
         say(final ? 'fullTime' : 'halfTime', { score, result });
+        if (final) {
+          // The player always controls the home side.
+          reportMatchResult({
+            game: 'football', venueId: config.venueId, home: config.home, away: config.away,
+            homeGoals: goals[0], awayGoals: goals[1], playerSide: 'home',
+            outcome: goals[0] > goals[1] ? 'win' : goals[0] < goals[1] ? 'loss' : 'draw',
+            difficulty: config.difficulty,
+          });
+        }
       },
       setSound(on) { sound.setEnabled(on); },
       setCommentary(on) { commentary.setEnabled(on); },
