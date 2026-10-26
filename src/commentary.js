@@ -152,6 +152,16 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
   if (audio && typeof fetch === 'function') {
     fetch(publicAsset('commentary/manifest.json')).then(r => (r.ok ? r.json() : null)).then(m => { clips = m; }).catch(() => {});
   }
+  // Recorded calls for a whole moment (manifest "events": {goal: [files]}), never the same one twice in a row.
+  const lastClip = {};
+  const eventClip = event => {
+    const pool = clips?.events?.[event];
+    if (!pool?.length) return null;
+    const options = pool.length > 1 ? pool.filter(file => file !== lastClip[event]) : pool;
+    const file = options[Math.floor(Math.random() * options.length)];
+    lastClip[event] = file;
+    return [publicAsset('commentary/' + file)];
+  };
   // Clip files for a line, in its delivery style (the other style if one sentence only exists there).
   const clipsFor = line => {
     if (!clips) return null;
@@ -184,11 +194,14 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
     };
     audio.onended = next;
     audio.onerror = next;
-    guard = setTimeout(done, 2500 + line.text.length * 90);
+    // Recorded calls can run long (crowd and music tails): ended normally closes them first.
+    guard = setTimeout(done, line.recorded ? 30000 : 2500 + line.text.length * 90);
     next();
   }
   function speak(line) {
     onCaption(line.text);
+    const recorded = line.event && eventClip(line.event);
+    if (recorded) { playClips({ ...line, recorded: true }, recorded); return; }
     const files = clipsFor(line);
     if (files) { playClips(line, files); return; }
     if (!synth || !Utterance) return;
@@ -227,8 +240,8 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
       if (!on || !EVENTS[event]) return;
       const time = now();
       if (EVENTS[event].priority < 3 && time - (lastEventAt[event] ?? -Infinity) < (COOLDOWN[event] ?? 5000)) return;
-      const line = pickLine(event, values, Math.random, last);
-      const busy = synth?.speaking || speakingPriority > 0;
+      const line = { ...pickLine(event, values, Math.random, last), event };
+      const busy = synth?.speaking || (audio && !audio.paused && !audio.ended) || speakingPriority > 0;
       if (line.priority === 3 || (busy && line.priority > speakingPriority)) {
         pending = null; cancelSpeech(); speak(line);
       } else if (!busy && time - lastSpokeAt >= (line.priority === 1 ? 2000 : 0)) speak(line);
