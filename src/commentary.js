@@ -114,18 +114,11 @@ export function goalContext([home, away], homeScored) {
 }
 
 // Picks a line for an event, avoiding the last one used for that event.
-export function pickLine(event, values, random = Math.random, last = {}, plainOnly = false) {
+export function pickLine(event, values, random = Math.random, last = {}) {
   const spec = EVENTS[event];
   if (!spec) return null;
   // Lines written around a player's name are kept for real usernames.
-  let lines = event === 'goal' && GOAL_MOMENTS[values.goalMoment] ? GOAL_MOMENTS[values.goalMoment] : spec.lines;
-  // A recorded (cloned) voice only has the sentences without names in them: keep those parts of each line.
-  if (plainOnly) {
-    const plain = list => [...new Set(list.map(line => splitSentences(line).filter(sentence => !sentence.includes('{')).join(' ')).filter(Boolean))];
-    lines = plain(lines);
-    if (!lines.length && event === 'goal') lines = plain(spec.lines);
-    if (!lines.length) return null;
-  }
+  const lines = event === 'goal' && GOAL_MOMENTS[values.goalMoment] ? GOAL_MOMENTS[values.goalMoment] : spec.lines;
   const fitting = values.who ? lines : lines.filter(line => !line.includes('{who}'));
   const options = fitting.length ? fitting : lines;
   const pool = options.length > 1 ? options.filter(line => line !== last[event]) : options;
@@ -154,64 +147,78 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
   const chooseVoice = () => { voice = chooseCommentaryVoice(synth?.getVoices?.() || [], phoneVoice()); };
   chooseVoice(); synth?.addEventListener?.('voiceschanged', chooseVoice);
 
-  // Voice clips: one manifest, loaded once; a missing manifest simply keeps the device voice.
-  let clips = null;
-  const audio = typeof Audio === 'function' ? new Audio() : null;
-  if (audio && typeof fetch === 'function') {
-    fetch(publicAsset('commentary/manifest.json')).then(r => (r.ok ? r.json() : null)).then(m => { clips = m; }).catch(() => {});
+  // Recorded commentator voice: the manifest has a clip for every hall/venue name and every piece of text
+  // between names; each line is joined from those pieces with Web Audio, so it runs on without gaps.
+  // Without a manifest (or Web Audio) the device voice speaks instead: never both in one match.
+  let clips = null, context = null, playing = [];
+  const buffers = new Map();
+  const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (AudioContextClass && typeof fetch === 'function') {
+    fetch(publicAsset('commentary/manifest.json')).then(r => (r.ok ? r.json() : null))
+      .then(m => { if (m?.names && m.calm && m.excited) clips = m; }).catch(() => {});
   }
-  // Recorded calls for a whole moment (manifest "events": {goal: [files]}), never the same one twice in a row.
-  const lastClip = {};
-  const eventClip = event => {
-    const pool = clips?.events?.[event];
-    if (!pool?.length) return null;
-    const options = pool.length > 1 ? pool.filter(file => file !== lastClip[event]) : pool;
-    const file = options[Math.floor(Math.random() * options.length)];
-    lastClip[event] = file;
-    return [publicAsset('commentary/' + file)];
+  const ensureContext = () => {
+    if (!context) context = new AudioContextClass();
+    if (context.state === 'suspended') context.resume?.();
+    return context;
   };
-  // Clip files for a line, in its delivery style (the other style if one sentence only exists there).
+  const loadBuffer = file => {
+    if (!buffers.has(file)) {
+      buffers.set(file, fetch(publicAsset('commentary/' + file)).then(r => r.arrayBuffer())
+        .then(data => ensureContext().decodeAudioData(data)).catch(() => null));
+    }
+    return buffers.get(file);
+  };
+  // Clip pieces for a line, with a short breath after commas and a longer one between sentences.
   const clipsFor = line => {
-    if (!clips) return null;
-    const style = line.excited ? 'excited' : 'calm', other = line.excited ? 'calm' : 'excited';
-    const files = splitSentences(line.text).map(sentence => clips[style]?.[sentence] || clips[other]?.[sentence]);
-    return files.length && files.every(Boolean) ? files.map(file => publicAsset('commentary/' + file)) : null;
+    const style = line.excited ? 'excited' : 'calm', other = line.excited ? 'calm' : 'excited', parts = [];
+    for (const sentence of splitSentences(line.text)) for (const token of speechTokens(sentence, clips.names)) {
+      const file = clips[style][token.text] || clips[other][token.text];
+      if (!file) return null;
+      parts.push({ file, pause: /[.!?]$/.test(token.text) ? .16 : /,$/.test(token.text) ? .08 : .02 });
+    }
+    return parts.length ? parts : null;
   };
+  function stopClips() {
+    for (const source of playing) { source.onended = null; try { source.stop(); } catch { /* already ended */ } }
+    playing = [];
+  }
 
   function cancelSpeech() {
     generation++; clearTimeout(guard); guard = null; speakingPriority = 0; current = null;
     synth?.cancel();
-    if (audio) { audio.onended = audio.onerror = null; audio.pause(); }
+    stopClips();
   }
-  // Play a line's clips back to back; the same queueing rules as the spoken voice.
-  function playClips(line, files) {
+  // Play a line's pieces back to back; the same queueing rules as the spoken voice.
+  function playClips(line, parts) {
     const id = ++generation;
     speakingPriority = line.priority; current = { line, started: true };
-    let index = 0, finished = false;
+    let finished = false;
     const done = () => {
       if (finished || id !== generation) return;
-      finished = true; clearTimeout(guard); guard = null; speakingPriority = 0; current = null;
+      finished = true; clearTimeout(guard); guard = null; speakingPriority = 0; current = null; playing = [];
       const next = pending; pending = null;
       if (on && next && now() - next.at < 1800) speak(next.line);
     };
-    const next = () => {
+    guard = setTimeout(done, 4000 + line.text.length * 120);
+    Promise.all(parts.map(part => loadBuffer(part.file))).then(decoded => {
       if (id !== generation) return;
-      if (index >= files.length) { done(); return; }
-      audio.src = files[index++];
-      audio.play().catch(() => { if (id === generation) { clips = null; done(); } });
-    };
-    audio.onended = next;
-    audio.onerror = next;
-    // Recorded calls can run long (crowd and music tails): ended normally closes them first.
-    guard = setTimeout(done, line.recorded ? 30000 : 2500 + line.text.length * 90);
-    next();
+      const ctx = ensureContext();
+      let at = ctx.currentTime + .03;
+      decoded.forEach((buffer, i) => {
+        if (!buffer) return;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer; source.connect(ctx.destination); source.start(at);
+        playing.push(source);
+        at += buffer.duration + parts[i].pause;
+      });
+      clearTimeout(guard);
+      guard = setTimeout(done, Math.max(0, at - ctx.currentTime) * 1000 + 150);
+    });
   }
   function speak(line) {
     onCaption(line.text);
-    const recorded = line.event && eventClip(line.event);
-    if (recorded) { playClips({ ...line, recorded: true }, recorded); return; }
-    const files = clipsFor(line);
-    if (files) { playClips(line, files); return; }
+    if (clips) { const parts = clipsFor(line); if (parts) playClips(line, parts); return; }
     if (!synth || !Utterance) return;
     const utterance = new Utterance(line.text), id = ++generation;
     if (voice) utterance.voice = voice;
@@ -248,12 +255,9 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
       if (!on || !EVENTS[event]) return;
       const time = now();
       if (EVENTS[event].priority < 3 && time - (lastEventAt[event] ?? -Infinity) < (COOLDOWN[event] ?? 5000)) return;
-      // A moment with recorded calls plays them even when no name-free line exists for it.
-      const picked = pickLine(event, values, Math.random, last, Boolean(clips?.plainOnly))
-        || (clips?.events?.[event]?.length ? { text: '', priority: EVENTS[event].priority, excited: Boolean(EVENTS[event].excited) } : null);
-      if (!picked) return;
-      const line = { ...picked, event };
-      const busy = synth?.speaking || (audio && !audio.paused && !audio.ended) || speakingPriority > 0;
+      // The recorded voice says hall names, not usernames: {who} becomes the player's hall.
+      const line = pickLine(event, clips ? { ...values, who: undefined } : values, Math.random, last);
+      const busy = synth?.speaking || speakingPriority > 0;
       if (line.priority === 3 || (busy && line.priority > speakingPriority)) {
         pending = null; cancelSpeech(); speak(line);
       } else if (!busy && time - lastSpokeAt >= (line.priority === 1 ? 2000 : 0)) speak(line);
@@ -262,6 +266,7 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
       lastSpokeAt = time; lastEventAt[event] = time;
     },
     unlock() {
+      if (on && context?.state === 'suspended') context.resume?.();
       if (!on || !synth || !Utterance) return;
       chooseVoice();
       if (synth.paused) synth.resume?.();
@@ -276,4 +281,21 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
     stop() { pending = blocked = null; cancelSpeech(); },
     dispose() { pending = blocked = null; on = false; cancelSpeech(); synth?.removeEventListener?.('voiceschanged', chooseVoice); },
   };
+}
+
+// Splits a spoken sentence into recorded pieces: each name (with the punctuation right after it) and the
+// text between names. Shared with tools/speech_tokens.mjs, which lists every piece to record.
+export function speechTokens(text, names) {
+  const sorted = [...names].sort((a, b) => b.length - a.length), tokens = [];
+  let rest = text.replace(/\s+/g, ' ').trim(), literal = '';
+  const flush = () => { const piece = literal.trim(); if (piece && /[a-z0-9]/i.test(piece)) tokens.push({ text: piece, name: false }); literal = ''; };
+  while (rest) {
+    const name = sorted.find(n => rest.startsWith(n) && !/[a-z0-9]/i.test(rest[n.length] || '') && (!literal || /[^a-z0-9]$/i.test(literal)));
+    if (name) {
+      const punct = rest.slice(name.length).match(/^[!?.,]*/)[0];
+      flush(); tokens.push({ text: name + punct, name: true }); rest = rest.slice(name.length + punct.length).trimStart();
+    } else { literal += rest[0]; rest = rest.slice(1); }
+  }
+  flush();
+  return tokens;
 }
