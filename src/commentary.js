@@ -10,6 +10,7 @@ const EVENTS = {
     'And we are under way here at {venue}. {home} against {away}.',
     'The referee blows, and {home} get us started at {venue}.',
     'Campus football at {venue}. {home} and {away}, let us go!',
+    'And we are under way!', 'Here we go! Campus football is on!',
   ] },
   secondHalf: { priority: 2, lines: ['The second half is under way.', 'Here we go again. Second half at {venue}.'] },
   goal: { priority: 3, excited: true, lines: [
@@ -33,7 +34,7 @@ const EVENTS = {
   yellowCard: { priority: 2, lines: ['A yellow card for {who}.', 'The referee goes to his pocket. Yellow for {team}.', 'Booked! {who} goes into the book.'] },
   redCard: { priority: 3, excited: true, lines: ['Red card! {who} is sent off!', 'Off he goes! {team} are a player down!' , 'That is a red card! A reckless challenge from {who}.'] },
   foul: { priority: 2, lines: ['Foul! Free kick to {team}.', 'The whistle goes. Free kick to {team}.', 'A clumsy challenge there. Free kick to {team}.'] },
-  freeKickNear: { priority: 2, lines: ['A free kick in shooting range for {team}.', 'This is a dangerous position for {team}.'] },
+  freeKickNear: { priority: 2, lines: ['A free kick in shooting range for {team}.', 'This is a dangerous position for {team}.', 'A free kick in a dangerous position.', 'Free kick, and this one is in shooting range.'] },
   corner: { priority: 2, lines: ['Corner to {team}.', '{team} win a corner.', 'It is behind for a corner. {team} will take it.'] },
   goalKick: { priority: 1, lines: ['Goal kick for {team}.', 'The keeper will restart for {team}.', 'Out for a goal kick. {team} can reset.'] },
   wide: { priority: 2, lines: ['Off target! The chance is gone.', 'He cannot find the target!', 'They will want that chance back!', 'It stays out. A let-off for the defence.'] },
@@ -113,11 +114,18 @@ export function goalContext([home, away], homeScored) {
 }
 
 // Picks a line for an event, avoiding the last one used for that event.
-export function pickLine(event, values, random = Math.random, last = {}) {
+export function pickLine(event, values, random = Math.random, last = {}, plainOnly = false) {
   const spec = EVENTS[event];
   if (!spec) return null;
   // Lines written around a player's name are kept for real usernames.
-  const lines = event === 'goal' && GOAL_MOMENTS[values.goalMoment] ? GOAL_MOMENTS[values.goalMoment] : spec.lines;
+  let lines = event === 'goal' && GOAL_MOMENTS[values.goalMoment] ? GOAL_MOMENTS[values.goalMoment] : spec.lines;
+  // A recorded (cloned) voice only has the sentences without names in them: keep those parts of each line.
+  if (plainOnly) {
+    const plain = list => [...new Set(list.map(line => splitSentences(line).filter(sentence => !sentence.includes('{')).join(' ')).filter(Boolean))];
+    lines = plain(lines);
+    if (!lines.length && event === 'goal') lines = plain(spec.lines);
+    if (!lines.length) return null;
+  }
   const fitting = values.who ? lines : lines.filter(line => !line.includes('{who}'));
   const options = fitting.length ? fitting : lines;
   const pool = options.length > 1 ? options.filter(line => line !== last[event]) : options;
@@ -240,7 +248,11 @@ export function createCommentary({ enabled = true, onCaption = () => {}, now = (
       if (!on || !EVENTS[event]) return;
       const time = now();
       if (EVENTS[event].priority < 3 && time - (lastEventAt[event] ?? -Infinity) < (COOLDOWN[event] ?? 5000)) return;
-      const line = { ...pickLine(event, values, Math.random, last), event };
+      // A moment with recorded calls plays them even when no name-free line exists for it.
+      const picked = pickLine(event, values, Math.random, last, Boolean(clips?.plainOnly))
+        || (clips?.events?.[event]?.length ? { text: '', priority: EVENTS[event].priority, excited: Boolean(EVENTS[event].excited) } : null);
+      if (!picked) return;
+      const line = { ...picked, event };
       const busy = synth?.speaking || (audio && !audio.paused && !audio.ended) || speakingPriority > 0;
       if (line.priority === 3 || (busy && line.priority > speakingPriority)) {
         pending = null; cancelSpeech(); speak(line);
