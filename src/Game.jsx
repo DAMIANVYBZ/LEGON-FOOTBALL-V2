@@ -142,6 +142,7 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
     let viewMode = cameraMode;
     const cameraFocus = new THREE.Vector3();
+    const clock = new THREE.Clock();
     scene.add(new THREE.HemisphereLight(0xf8fcff, 0x466235, 2.2));
     const sun = new THREE.DirectionalLight(0xffe7ba, 2.6);
     sun.position.set(-50, 95, 48);
@@ -2557,58 +2558,23 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
     // The match runs at a fixed SIM_DT, so it plays at the same real-time
     // speed on every device. Player animations use simulation time; the camera uses frame time.
     let accumulator = 0, shownPhase = 'attack';
-    // Frames reach the screen at uneven times (inside the LEGONRUSH web view especially), so one frame runs no
-    // simulation step and the next runs two. Drawing the last step made the camera chase a target that moved in
-    // jumps. Draw the ball, players and their markers blended between the last two steps instead.
-    const smoothPrev = [], smoothCurr = [], smoothPrevQ = [], smoothCurrQ = [], smoothed = [];
-    const smoothTargets = () => [ball, ring, marker, ...people.map(person => person.mesh)];
-    function snapshotSmoothed() {
-      smoothTargets().forEach((object, i) => {
-        smoothed[i] = object;
-        (smoothPrev[i] ||= new THREE.Vector3()).copy(object.position);
-        (smoothPrevQ[i] ||= new THREE.Quaternion()).copy(object.quaternion);
-      });
-    }
-    function blendSmoothed(alpha) {
-      const list = smoothTargets();
-      list.forEach((object, i) => {
-        (smoothCurr[i] ||= new THREE.Vector3()).copy(object.position);
-        (smoothCurrQ[i] ||= new THREE.Quaternion()).copy(object.quaternion);
-        // Skip new objects and teleports (kickoffs, restarts, replays cutting).
-        if (smoothed[i] !== object || smoothPrev[i].distanceToSquared(smoothCurr[i]) > 9) return;
-        object.position.lerpVectors(smoothPrev[i], smoothCurr[i], alpha);
-        // The ball's spin can pass half a turn in one step; only the players turn smoothly.
-        if (object !== ball) object.quaternion.slerpQuaternions(smoothPrevQ[i], smoothCurrQ[i], alpha);
-      });
-      return list;
-    }
-    function restoreSmoothed(list) {
-      list.forEach((object, i) => { object.position.copy(smoothCurr[i]); object.quaternion.copy(smoothCurrQ[i]); });
-    }
-    // Frame time comes from the browser's frame clock (the time each frame is due), which is steadier than
-    // reading the time whenever this code happens to run.
-    let lastFrameAt = null;
-    function frameClock(now) {
-      const seconds = lastFrameAt === null ? 0 : Math.max(0, (now - lastFrameAt) / 1000);
-      lastFrameAt = now; return seconds;
-    }
     // The loading screen lifts on the kickoff view: everything is in place and
     // the clock starts from here.
     function startMatch() {
       ready.started = true;
-      reset(); lastFrameAt = null; accumulator = 0;
+      reset(); clock.getDelta(); accumulator = 0;
       setLoading({ done: true, progress: 1, step: '' });
       show('KICK OFF', 1.5);
       say('kickoff');
     }
-    function animate(now = performance.now()) {
+    function animate() {
       if (disposed) return;
       requestAnimationFrame(animate);
       if (!ready.started) {
         if (!(ready.venue && ready.physics && ready.model && ready.clips >= clipTotal)) return;
         startMatch();
       }
-      const realFrameDt = frameClock(now);
+      const realFrameDt = clock.getDelta();
       const frameDt = Math.min(realFrameDt, 0.25);
       pollGamepad();
       if (isTouch && isTouchAttack() !== shownTouchAttack) {
@@ -2621,13 +2587,11 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
       accumulator += frameDt;
       let steps = 0;
       while (accumulator >= SIM_DT && steps < MAX_SIM_STEPS) {
-        snapshotSmoothed();
         simulate(SIM_DT);
         if (!pausedLocal) animatePlayers(SIM_DT);
         accumulator -= SIM_DT; steps++;
       }
       if (steps === MAX_SIM_STEPS) accumulator = 0;
-      const blended = blendSmoothed(pausedLocal || steps === MAX_SIM_STEPS ? 1 : accumulator / SIM_DT);
       // Quality reacts to real frame time, even when physics must cap catch-up.
       adaptQuality(realFrameDt);
       updateRadar();
@@ -2713,7 +2677,6 @@ export default function Game({ config, cameraMode, exit, preferences, orientatio
         else cam.position.add(new THREE.Vector3(Math.sin(t * 83) * amount, Math.sin(t * 61 + 1) * amount, Math.sin(t * 71 + 2) * amount * 0.6));
       }
       renderer.render(scene, cam);
-      restoreSmoothed(blended);
       renderPending = false;
     }
     cam.position.set(0, WIDTH * 0.47, WIDTH * 0.85); cam.lookAt(0, 0.9, WIDTH * 0.25); animate();
